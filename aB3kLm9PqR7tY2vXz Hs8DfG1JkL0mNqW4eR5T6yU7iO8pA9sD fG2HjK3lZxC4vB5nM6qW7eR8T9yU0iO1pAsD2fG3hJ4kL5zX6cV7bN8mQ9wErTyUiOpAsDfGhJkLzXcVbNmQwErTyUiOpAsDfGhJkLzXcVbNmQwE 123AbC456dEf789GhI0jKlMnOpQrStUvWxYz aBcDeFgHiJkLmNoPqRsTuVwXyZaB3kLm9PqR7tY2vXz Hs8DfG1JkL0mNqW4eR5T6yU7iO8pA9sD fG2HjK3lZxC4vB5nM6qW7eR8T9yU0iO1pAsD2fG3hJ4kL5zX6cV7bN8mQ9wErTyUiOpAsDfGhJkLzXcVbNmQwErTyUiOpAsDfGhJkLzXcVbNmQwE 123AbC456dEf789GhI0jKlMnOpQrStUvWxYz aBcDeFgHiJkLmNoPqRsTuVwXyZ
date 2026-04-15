@@ -1,0 +1,974 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+
+local localPlayer = Players.LocalPlayer
+if not localPlayer then
+	return
+end
+
+local PLAYER_GUI = localPlayer:WaitForChild("PlayerGui")
+local CREDIT_USER_ID = 9930783751
+local CREDIT_USERNAME = "CuongOutLook"
+local LANGUAGE_FILE = "CuongOutLook_maintenance_lang.txt"
+local GUI_NAME = "CuongOutLookMaintenanceUI"
+local AMBIENT_COUNT = 14
+local DIGIT_COUNT = 18
+local digitPool = "COL0123456789@#"
+local SHOW_DIGIT_EFFECT = false
+
+local TEXTS = {
+	en = {
+		windowTitle = "COL Loader",
+		maintenanceBadge = "SYSTEM MAINTENANCE",
+		maintenanceTitle = "CuongOutLook is under maintenance",
+		maintenanceBody = "Core functions are temporarily paused for tuning, fixes, and stability checks.",
+		maintenanceNote = "Please rejoin later. The loader UI remains available during maintenance.",
+		creatorTitle = "Creator",
+		creatorSubtitle = "Official profile",
+		creatorUser = "Roblox User: CuongOutLook",
+		creatorTag = "Builder of COL",
+		statusTitle = "Current status",
+		statusLine1 = "Loader UI is online",
+		statusLine2 = "Main COL source is paused",
+		statusLine3 = "Language switch remains available",
+		rejoin = "Rejoin Server",
+		close = "Close",
+		rejoining = "Rejoining current server...",
+		rejoinFailed = "Unable to rejoin this server.",
+		closeHint = "You can reopen by executing the loadstring again.",
+		footer = "Thank you for waiting.",
+	},
+	vi = {
+		windowTitle = "COL Loader",
+		maintenanceBadge = "HỆ THỐNG BẢO TRÌ",
+		maintenanceTitle = "CuongOutLook đang bảo trì",
+		maintenanceBody = "Các chức năng chính đang tạm dừng để tối ưu, sửa lỗi và kiểm tra độ ổn định.",
+		maintenanceNote = "Vui lòng quay lại sau. Giao diện loader vẫn hoạt động trong thời gian bảo trì.",
+		creatorTitle = "Creator",
+		creatorSubtitle = "Hồ sơ chính thức",
+		creatorUser = "Người dùng Roblox: CuongOutLook",
+		creatorTag = "Người xây dựng COL",
+		statusTitle = "Trạng thái hiện tại",
+		statusLine1 = "Giao diện loader vẫn online",
+		statusLine2 = "Source COL chính đang tạm dừng",
+		statusLine3 = "Vẫn hỗ trợ chuyển ngôn ngữ",
+		rejoin = "Vào Lại Server",
+		close = "Đóng",
+		rejoining = "Đang vào lại server hiện tại...",
+		rejoinFailed = "Không thể vào lại server này.",
+		closeHint = "Bạn có thể mở lại bằng cách chạy loadstring lần nữa.",
+		footer = "Cảm ơn bạn đã chờ.",
+	},
+	jp = {
+		windowTitle = "COL Loader",
+		maintenanceBadge = "メンテナンス中",
+		maintenanceTitle = "CuongOutLook は現在メンテナンス中です",
+		maintenanceBody = "主要機能は調整、修正、安定性チェックのため一時停止しています。",
+		maintenanceNote = "後でもう一度お試しください。メンテナンス中でもローダーUIは使用できます。",
+		creatorTitle = "Creator",
+		creatorSubtitle = "公式プロフィール",
+		creatorUser = "Robloxユーザー: CuongOutLook",
+		creatorTag = "COL の開発者",
+		statusTitle = "現在の状態",
+		statusLine1 = "ローダーUIは利用可能です",
+		statusLine2 = "COL 本体は一時停止中です",
+		statusLine3 = "言語切り替えは利用可能です",
+		rejoin = "サーバーに再参加",
+		close = "閉じる",
+		rejoining = "現在のサーバーに再参加しています...",
+		rejoinFailed = "このサーバーには再参加できません。",
+		closeHint = "再度開くには loadstring をもう一度実行してください。",
+		footer = "お待ちいただきありがとうございます。",
+	},
+}
+
+local LANGUAGE_LABELS = {
+	en = "English",
+	vi = "Tiếng Việt",
+	jp = "日本語",
+}
+
+local runtime = {
+	connections = {},
+	tweens = {},
+}
+
+local currentLanguage = "vi"
+local uiBindings = {}
+local langButtons = {}
+local ambientDots = {}
+local digitLabels = {}
+local hoverTweens = {}
+
+local function trackConnection(connection)
+	if connection then
+		table.insert(runtime.connections, connection)
+	end
+	return connection
+end
+
+local function trackTween(tween)
+	if tween then
+		table.insert(runtime.tweens, tween)
+	end
+	return tween
+end
+
+local function cleanupOldGui()
+	local roots = {}
+	local okHui, hui = pcall(function()
+		if type(gethui) == "function" then
+			return gethui()
+		end
+	end)
+	if okHui and hui then
+		table.insert(roots, hui)
+	end
+	table.insert(roots, PLAYER_GUI)
+	for _, root in ipairs(roots) do
+		local existing = root and root:FindFirstChild(GUI_NAME)
+		if existing then
+			existing:Destroy()
+		end
+	end
+end
+
+cleanupOldGui()
+
+local function readSavedLanguage()
+	if type(isfile) ~= "function" or type(readfile) ~= "function" then
+		return nil
+	end
+	local okExists, exists = pcall(isfile, LANGUAGE_FILE)
+	if not okExists or not exists then
+		return nil
+	end
+	local okRead, raw = pcall(readfile, LANGUAGE_FILE)
+	if not okRead or type(raw) ~= "string" then
+		return nil
+	end
+	local clean = raw:match("^%s*(.-)%s*$")
+	if TEXTS[clean] then
+		return clean
+	end
+	return nil
+end
+
+local function saveLanguage(lang)
+	if type(writefile) ~= "function" or not TEXTS[lang] then
+		return false
+	end
+	return pcall(writefile, LANGUAGE_FILE, lang)
+end
+
+currentLanguage = readSavedLanguage() or currentLanguage
+
+local function tr(key)
+	local pack = TEXTS[currentLanguage] or TEXTS.vi
+	return pack[key] or TEXTS.vi[key] or key
+end
+
+local function bindText(object, key, formatter)
+	uiBindings[object] = { key = key, formatter = formatter }
+	local value = tr(key)
+	object.Text = formatter and formatter(value) or value
+end
+
+local function setZIndexRecursive(rootObject, zIndex)
+	if not rootObject then
+		return
+	end
+	pcall(function()
+		rootObject.ZIndex = zIndex
+	end)
+	for _, child in ipairs(rootObject:GetDescendants()) do
+		pcall(function()
+			child.ZIndex = zIndex
+		end)
+	end
+end
+
+local function refreshTexts()
+	for object, info in pairs(uiBindings) do
+		if object and object.Parent then
+			local value = tr(info.key)
+			object.Text = info.formatter and info.formatter(value) or value
+		end
+	end
+	for lang, button in pairs(langButtons) do
+		if button and button.Parent then
+			local active = lang == currentLanguage
+			button.BackgroundColor3 = active and Color3.fromRGB(73, 176, 255) or Color3.fromRGB(18, 30, 49)
+			button.TextColor3 = active and Color3.fromRGB(11, 19, 31) or Color3.fromRGB(220, 231, 245)
+		end
+	end
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = GUI_NAME
+screenGui.IgnoreGuiInset = true
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 2147483647
+
+do
+	local parent = PLAYER_GUI
+	local okHui, hui = pcall(function()
+		if type(gethui) == "function" then
+			return gethui()
+		end
+	end)
+	if okHui and hui then
+		parent = hui
+	end
+	screenGui.Parent = parent
+end
+
+local root = Instance.new("Frame")
+root.Size = UDim2.fromScale(1, 1)
+root.BackgroundColor3 = Color3.fromRGB(4, 8, 16)
+root.BorderSizePixel = 0
+root.Parent = screenGui
+
+local rootGradient = Instance.new("UIGradient", root)
+rootGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(4, 8, 16)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(4, 8, 16)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 8, 16)),
+})
+rootGradient.Rotation = 18
+
+local ambientLayer = Instance.new("Frame")
+ambientLayer.Name = "AmbientLayer"
+ambientLayer.Size = UDim2.fromScale(1, 1)
+ambientLayer.BackgroundTransparency = 1
+ambientLayer.ZIndex = 0
+ambientLayer.Visible = false
+ambientLayer.Parent = root
+
+local blurOverlay = Instance.new("Frame")
+blurOverlay.Size = UDim2.fromScale(1, 1)
+blurOverlay.BackgroundColor3 = Color3.fromRGB(2, 5, 10)
+blurOverlay.BackgroundTransparency = 1
+blurOverlay.BorderSizePixel = 0
+blurOverlay.ZIndex = 1
+blurOverlay.Visible = false
+blurOverlay.Parent = root
+
+local main = Instance.new("Frame")
+main.AnchorPoint = Vector2.new(0.5, 0.5)
+main.Position = UDim2.fromScale(0.5, 0.5)
+main.Size = UDim2.fromOffset(860, 430)
+main.BackgroundColor3 = Color3.fromRGB(9, 16, 28)
+main.BackgroundTransparency = 0.08
+main.BorderSizePixel = 0
+main.Parent = root
+main.Active = true
+main.Draggable = true
+main.ZIndex = 2
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 24)
+
+local mainStroke = Instance.new("UIStroke", main)
+mainStroke.Color = Color3.fromRGB(64, 121, 179)
+mainStroke.Thickness = 1.6
+mainStroke.Transparency = 0.12
+
+local mainGradient = Instance.new("UIGradient", main)
+mainGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 20, 34)),
+	ColorSequenceKeypoint.new(0.55, Color3.fromRGB(8, 15, 27)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 11, 22)),
+})
+mainGradient.Rotation = 135
+
+local glow = Instance.new("Frame")
+glow.AnchorPoint = Vector2.new(0.5, 0.5)
+glow.Position = UDim2.fromScale(0.5, 0.08)
+glow.Size = UDim2.fromOffset(480, 150)
+glow.BackgroundColor3 = Color3.fromRGB(80, 196, 255)
+glow.BackgroundTransparency = 1
+glow.BorderSizePixel = 0
+glow.ZIndex = 2
+glow.Visible = false
+glow.Parent = main
+Instance.new("UICorner", glow).CornerRadius = UDim.new(1, 0)
+
+local digitLayer = Instance.new("Frame")
+digitLayer.Size = UDim2.fromScale(1, 1)
+digitLayer.BackgroundTransparency = 1
+digitLayer.ClipsDescendants = true
+digitLayer.ZIndex = 1
+digitLayer.Visible = false
+digitLayer.Parent = main
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, -24, 0, 54)
+header.Position = UDim2.fromOffset(12, 12)
+header.BackgroundTransparency = 1
+header.ZIndex = 6
+header.Parent = main
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -404, 0, 26)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 21
+titleLabel.TextColor3 = Color3.fromRGB(242, 247, 255)
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.TextYAlignment = Enum.TextYAlignment.Center
+titleLabel.ZIndex = 7
+titleLabel.Parent = header
+bindText(titleLabel, "windowTitle")
+
+local subtitleLabel = Instance.new("TextLabel")
+subtitleLabel.Size = UDim2.new(1, -404, 0, 18)
+subtitleLabel.Position = UDim2.fromOffset(0, 30)
+subtitleLabel.BackgroundTransparency = 1
+subtitleLabel.Font = Enum.Font.Gotham
+subtitleLabel.TextSize = 11
+subtitleLabel.TextColor3 = Color3.fromRGB(140, 168, 196)
+subtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+subtitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+subtitleLabel.ZIndex = 7
+subtitleLabel.Parent = header
+bindText(subtitleLabel, "maintenanceBadge")
+
+local langHolder = Instance.new("Frame")
+langHolder.AnchorPoint = Vector2.new(1, 0)
+langHolder.Position = UDim2.new(1, -104, 0, 0)
+langHolder.Size = UDim2.fromOffset(268, 34)
+langHolder.BackgroundTransparency = 1
+langHolder.ZIndex = 7
+langHolder.Parent = header
+
+local langLayout = Instance.new("UIListLayout", langHolder)
+langLayout.FillDirection = Enum.FillDirection.Horizontal
+langLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+langLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+langLayout.Padding = UDim.new(0, 8)
+
+local closeButton = Instance.new("TextButton")
+closeButton.AnchorPoint = Vector2.new(1, 0)
+closeButton.Position = UDim2.new(1, 0, 0, 2)
+closeButton.Size = UDim2.fromOffset(92, 30)
+closeButton.BackgroundColor3 = Color3.fromRGB(33, 42, 58)
+closeButton.BorderSizePixel = 0
+closeButton.AutoButtonColor = false
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 12
+closeButton.TextColor3 = Color3.fromRGB(244, 247, 252)
+closeButton.ZIndex = 8
+closeButton.Parent = header
+Instance.new("UICorner", closeButton).CornerRadius = UDim.new(0, 10)
+bindText(closeButton, "close")
+
+local contentHolder = Instance.new("Frame")
+contentHolder.Size = UDim2.new(1, -28, 1, -92)
+contentHolder.Position = UDim2.fromOffset(14, 74)
+contentHolder.BackgroundTransparency = 1
+contentHolder.ZIndex = 5
+contentHolder.Parent = main
+
+local contentLayout = Instance.new("UIListLayout", contentHolder)
+contentLayout.FillDirection = Enum.FillDirection.Horizontal
+contentLayout.Padding = UDim.new(0, 14)
+contentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+contentLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local creatorCard = Instance.new("Frame")
+creatorCard.Name = "CreatorCard"
+creatorCard.Size = UDim2.fromOffset(252, 320)
+creatorCard.BackgroundColor3 = Color3.fromRGB(10, 18, 31)
+creatorCard.BorderSizePixel = 0
+creatorCard.ZIndex = 5
+creatorCard.Parent = contentHolder
+creatorCard.ClipsDescendants = true
+Instance.new("UICorner", creatorCard).CornerRadius = UDim.new(0, 22)
+
+local creatorStroke = Instance.new("UIStroke", creatorCard)
+creatorStroke.Color = Color3.fromRGB(45, 88, 138)
+creatorStroke.Thickness = 1.2
+creatorStroke.Transparency = 0.1
+
+local creatorGlow = Instance.new("Frame")
+creatorGlow.AnchorPoint = Vector2.new(0.5, 0)
+creatorGlow.Position = UDim2.new(0.5, 0, 0, 12)
+creatorGlow.Size = UDim2.fromOffset(132, 30)
+creatorGlow.BackgroundColor3 = Color3.fromRGB(18, 44, 66)
+creatorGlow.BackgroundTransparency = 0.18
+creatorGlow.BorderSizePixel = 0
+creatorGlow.ZIndex = 5
+creatorGlow.Parent = creatorCard
+Instance.new("UICorner", creatorGlow).CornerRadius = UDim.new(1, 0)
+
+local creatorTitle = Instance.new("TextLabel")
+creatorTitle.Size = UDim2.new(1, -24, 0, 26)
+creatorTitle.Position = UDim2.fromOffset(12, 14)
+creatorTitle.BackgroundTransparency = 1
+creatorTitle.Font = Enum.Font.GothamBold
+creatorTitle.TextSize = 18
+creatorTitle.TextColor3 = Color3.fromRGB(241, 246, 255)
+creatorTitle.TextXAlignment = Enum.TextXAlignment.Center
+creatorTitle.TextYAlignment = Enum.TextYAlignment.Center
+creatorTitle.ZIndex = 6
+creatorTitle.Parent = creatorCard
+bindText(creatorTitle, "creatorTitle")
+
+local creatorSubtitle = Instance.new("TextLabel")
+creatorSubtitle.Size = UDim2.new(1, -24, 0, 18)
+creatorSubtitle.Position = UDim2.fromOffset(12, 40)
+creatorSubtitle.BackgroundTransparency = 1
+creatorSubtitle.Font = Enum.Font.Gotham
+creatorSubtitle.TextSize = 11
+creatorSubtitle.TextColor3 = Color3.fromRGB(135, 155, 182)
+creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Center
+creatorSubtitle.TextYAlignment = Enum.TextYAlignment.Center
+creatorSubtitle.ZIndex = 6
+creatorSubtitle.Parent = creatorCard
+bindText(creatorSubtitle, "creatorSubtitle")
+
+local avatarWrap = Instance.new("Frame")
+avatarWrap.Size = UDim2.fromOffset(128, 128)
+avatarWrap.Position = UDim2.new(0.5, -64, 0, 72)
+avatarWrap.BackgroundColor3 = Color3.fromRGB(8, 16, 28)
+avatarWrap.BorderSizePixel = 0
+avatarWrap.ZIndex = 6
+avatarWrap.Parent = creatorCard
+Instance.new("UICorner", avatarWrap).CornerRadius = UDim.new(1, 0)
+
+local avatarStroke = Instance.new("UIStroke", avatarWrap)
+avatarStroke.Color = Color3.fromRGB(90, 196, 255)
+avatarStroke.Thickness = 1.5
+
+local avatarImage = Instance.new("ImageLabel")
+avatarImage.Size = UDim2.new(1, -12, 1, -12)
+avatarImage.Position = UDim2.fromOffset(6, 6)
+avatarImage.BackgroundTransparency = 1
+avatarImage.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=420&h=420", CREDIT_USER_ID)
+avatarImage.ScaleType = Enum.ScaleType.Crop
+avatarImage.ZIndex = 7
+avatarImage.Parent = avatarWrap
+Instance.new("UICorner", avatarImage).CornerRadius = UDim.new(1, 0)
+pcall(function()
+	local thumb = Players:GetUserThumbnailAsync(CREDIT_USER_ID, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+	if thumb and thumb ~= "" then
+		avatarImage.Image = thumb
+	end
+end)
+
+local creatorUser = Instance.new("TextLabel")
+creatorUser.Size = UDim2.new(1, -26, 0, 22)
+creatorUser.Position = UDim2.fromOffset(13, 214)
+creatorUser.BackgroundTransparency = 1
+creatorUser.Font = Enum.Font.GothamBold
+creatorUser.TextSize = 14
+creatorUser.TextColor3 = Color3.fromRGB(244, 247, 255)
+creatorUser.TextXAlignment = Enum.TextXAlignment.Center
+creatorUser.TextYAlignment = Enum.TextYAlignment.Center
+creatorUser.ZIndex = 6
+creatorUser.Parent = creatorCard
+bindText(creatorUser, "creatorUser")
+
+local creatorTag = Instance.new("TextLabel")
+creatorTag.Size = UDim2.new(1, -26, 0, 18)
+creatorTag.Position = UDim2.fromOffset(13, 238)
+creatorTag.BackgroundTransparency = 1
+creatorTag.Font = Enum.Font.Gotham
+creatorTag.TextSize = 12
+creatorTag.TextColor3 = Color3.fromRGB(157, 187, 214)
+creatorTag.TextXAlignment = Enum.TextXAlignment.Center
+creatorTag.TextYAlignment = Enum.TextYAlignment.Center
+creatorTag.ZIndex = 6
+creatorTag.Parent = creatorCard
+bindText(creatorTag, "creatorTag")
+
+local creatorBadge = Instance.new("TextLabel")
+creatorBadge.Size = UDim2.fromOffset(142, 28)
+creatorBadge.Position = UDim2.new(0.5, -71, 1, -42)
+creatorBadge.BackgroundColor3 = Color3.fromRGB(15, 34, 50)
+creatorBadge.BorderSizePixel = 0
+creatorBadge.Font = Enum.Font.GothamBold
+creatorBadge.TextSize = 12
+creatorBadge.TextColor3 = Color3.fromRGB(124, 225, 255)
+creatorBadge.Text = "@" .. CREDIT_USERNAME
+creatorBadge.TextYAlignment = Enum.TextYAlignment.Center
+creatorBadge.ZIndex = 6
+creatorBadge.Parent = creatorCard
+Instance.new("UICorner", creatorBadge).CornerRadius = UDim.new(0, 10)
+
+local infoCard = Instance.new("Frame")
+infoCard.Name = "InfoCard"
+infoCard.Size = UDim2.fromOffset(566, 320)
+infoCard.BackgroundColor3 = Color3.fromRGB(11, 19, 32)
+infoCard.BorderSizePixel = 0
+infoCard.ZIndex = 5
+infoCard.Parent = contentHolder
+infoCard.ClipsDescendants = true
+Instance.new("UICorner", infoCard).CornerRadius = UDim.new(0, 22)
+
+local infoStroke = Instance.new("UIStroke", infoCard)
+infoStroke.Color = Color3.fromRGB(48, 96, 150)
+infoStroke.Thickness = 1.2
+infoStroke.Transparency = 0.08
+
+local badge = Instance.new("TextLabel")
+badge.Size = UDim2.fromOffset(188, 32)
+badge.Position = UDim2.fromOffset(18, 18)
+badge.BackgroundColor3 = Color3.fromRGB(14, 34, 52)
+badge.BorderSizePixel = 0
+badge.Font = Enum.Font.GothamBold
+badge.TextSize = 12
+badge.TextColor3 = Color3.fromRGB(117, 223, 255)
+badge.TextYAlignment = Enum.TextYAlignment.Center
+badge.ZIndex = 6
+badge.Parent = infoCard
+Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 10)
+bindText(badge, "maintenanceBadge")
+
+local maintenanceTitle = Instance.new("TextLabel")
+maintenanceTitle.Size = UDim2.new(1, -36, 0, 48)
+maintenanceTitle.Position = UDim2.fromOffset(18, 64)
+maintenanceTitle.BackgroundTransparency = 1
+maintenanceTitle.Font = Enum.Font.GothamBold
+maintenanceTitle.TextSize = 28
+maintenanceTitle.TextWrapped = true
+maintenanceTitle.TextColor3 = Color3.fromRGB(244, 248, 255)
+maintenanceTitle.TextXAlignment = Enum.TextXAlignment.Left
+maintenanceTitle.TextYAlignment = Enum.TextYAlignment.Top
+maintenanceTitle.ZIndex = 6
+maintenanceTitle.Parent = infoCard
+bindText(maintenanceTitle, "maintenanceTitle")
+
+local maintenanceBody = Instance.new("TextLabel")
+maintenanceBody.Size = UDim2.new(1, -36, 0, 40)
+maintenanceBody.Position = UDim2.fromOffset(18, 114)
+maintenanceBody.BackgroundTransparency = 1
+maintenanceBody.Font = Enum.Font.Gotham
+maintenanceBody.TextSize = 14
+maintenanceBody.TextWrapped = true
+maintenanceBody.TextColor3 = Color3.fromRGB(185, 200, 220)
+maintenanceBody.TextXAlignment = Enum.TextXAlignment.Left
+maintenanceBody.TextYAlignment = Enum.TextYAlignment.Top
+maintenanceBody.ZIndex = 6
+maintenanceBody.Parent = infoCard
+bindText(maintenanceBody, "maintenanceBody")
+
+local maintenanceNote = Instance.new("TextLabel")
+maintenanceNote.Size = UDim2.new(1, -36, 0, 28)
+maintenanceNote.Position = UDim2.fromOffset(18, 158)
+maintenanceNote.BackgroundTransparency = 1
+maintenanceNote.Font = Enum.Font.Gotham
+maintenanceNote.TextSize = 12
+maintenanceNote.TextWrapped = true
+maintenanceNote.TextColor3 = Color3.fromRGB(132, 157, 182)
+maintenanceNote.TextXAlignment = Enum.TextXAlignment.Left
+maintenanceNote.TextYAlignment = Enum.TextYAlignment.Top
+maintenanceNote.ZIndex = 6
+maintenanceNote.Parent = infoCard
+bindText(maintenanceNote, "maintenanceNote")
+
+local statusCard = Instance.new("Frame")
+statusCard.Size = UDim2.new(1, -36, 0, 74)
+statusCard.Position = UDim2.fromOffset(18, 196)
+statusCard.BackgroundColor3 = Color3.fromRGB(8, 14, 26)
+statusCard.BorderSizePixel = 0
+statusCard.ZIndex = 6
+statusCard.Parent = infoCard
+Instance.new("UICorner", statusCard).CornerRadius = UDim.new(0, 16)
+
+local statusStroke = Instance.new("UIStroke", statusCard)
+statusStroke.Color = Color3.fromRGB(35, 68, 108)
+statusStroke.Thickness = 1
+statusStroke.Transparency = 0.08
+
+local bottomTextHolder = Instance.new("Frame")
+bottomTextHolder.AnchorPoint = Vector2.new(0, 1)
+bottomTextHolder.Size = UDim2.new(1, -228, 0, 34)
+bottomTextHolder.Position = UDim2.new(0, 18, 1, -10)
+bottomTextHolder.BackgroundTransparency = 1
+bottomTextHolder.ZIndex = 6
+bottomTextHolder.Parent = infoCard
+
+local statusTitle = Instance.new("TextLabel")
+statusTitle.Size = UDim2.new(1, -24, 0, 18)
+statusTitle.Position = UDim2.fromOffset(12, 10)
+statusTitle.BackgroundTransparency = 1
+statusTitle.Font = Enum.Font.GothamBold
+statusTitle.TextSize = 13
+statusTitle.TextColor3 = Color3.fromRGB(244, 247, 253)
+statusTitle.TextXAlignment = Enum.TextXAlignment.Left
+statusTitle.TextYAlignment = Enum.TextYAlignment.Center
+statusTitle.ZIndex = 7
+statusTitle.Parent = statusCard
+bindText(statusTitle, "statusTitle")
+
+local function createStatusLine(order, key)
+	local rowTop = 28 + ((order - 1) * 14)
+	local dot = Instance.new("Frame")
+	dot.Size = UDim2.fromOffset(8, 8)
+	dot.Position = UDim2.fromOffset(14, rowTop + 3)
+	dot.BackgroundColor3 = Color3.fromRGB(86, 220, 255)
+	dot.BorderSizePixel = 0
+	dot.ZIndex = 7
+	dot.Parent = statusCard
+	Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+	local line = Instance.new("TextLabel")
+	line.Size = UDim2.new(1, -34, 0, 14)
+	line.Position = UDim2.fromOffset(28, rowTop)
+	line.BackgroundTransparency = 1
+	line.Font = Enum.Font.Gotham
+	line.TextSize = 11
+	line.TextColor3 = Color3.fromRGB(181, 198, 220)
+	line.TextXAlignment = Enum.TextXAlignment.Left
+	line.TextYAlignment = Enum.TextYAlignment.Center
+	line.ZIndex = 7
+	line.Parent = statusCard
+	bindText(line, key)
+end
+
+createStatusLine(1, "statusLine1")
+createStatusLine(2, "statusLine2")
+createStatusLine(3, "statusLine3")
+
+local footerLabel = Instance.new("TextLabel")
+footerLabel.AnchorPoint = Vector2.new(0, 1)
+footerLabel.Size = UDim2.new(1, 0, 0, 16)
+footerLabel.Position = UDim2.new(0, 0, 1, 0)
+footerLabel.BackgroundTransparency = 1
+footerLabel.Font = Enum.Font.Gotham
+footerLabel.TextSize = 12
+footerLabel.TextColor3 = Color3.fromRGB(108, 137, 170)
+footerLabel.TextXAlignment = Enum.TextXAlignment.Left
+footerLabel.TextYAlignment = Enum.TextYAlignment.Center
+footerLabel.ZIndex = 6
+footerLabel.Parent = bottomTextHolder
+bindText(footerLabel, "footer")
+
+local rejoinButton = Instance.new("TextButton")
+rejoinButton.AnchorPoint = Vector2.new(1, 1)
+rejoinButton.Position = UDim2.new(1, -18, 1, -10)
+rejoinButton.Size = UDim2.fromOffset(180, 36)
+rejoinButton.BackgroundColor3 = Color3.fromRGB(78, 184, 255)
+rejoinButton.BorderSizePixel = 0
+rejoinButton.AutoButtonColor = false
+rejoinButton.Font = Enum.Font.GothamBold
+rejoinButton.TextSize = 13
+rejoinButton.TextColor3 = Color3.fromRGB(8, 14, 24)
+rejoinButton.ZIndex = 7
+rejoinButton.Parent = infoCard
+Instance.new("UICorner", rejoinButton).CornerRadius = UDim.new(0, 14)
+bindText(rejoinButton, "rejoin")
+
+local statusHint = Instance.new("TextLabel")
+statusHint.AnchorPoint = Vector2.new(0, 0)
+statusHint.Size = UDim2.new(1, 0, 0, 16)
+statusHint.Position = UDim2.fromOffset(0, 0)
+statusHint.BackgroundTransparency = 1
+statusHint.Font = Enum.Font.Gotham
+statusHint.TextSize = 11
+statusHint.TextColor3 = Color3.fromRGB(126, 155, 185)
+statusHint.TextXAlignment = Enum.TextXAlignment.Left
+statusHint.TextYAlignment = Enum.TextYAlignment.Center
+statusHint.TextWrapped = false
+statusHint.ZIndex = 6
+statusHint.Parent = bottomTextHolder
+bindText(statusHint, "closeHint")
+
+local function tweenButton(button, background, textColor)
+	if hoverTweens[button] then
+		hoverTweens[button]:Cancel()
+	end
+	local tween = TweenService:Create(button, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundColor3 = background,
+		TextColor3 = textColor,
+	})
+	hoverTweens[button] = tween
+	tween:Play()
+end
+
+local function buildLangButton(lang)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.fromOffset(86, 34)
+	button.BackgroundColor3 = Color3.fromRGB(18, 30, 49)
+	button.BorderSizePixel = 0
+	button.AutoButtonColor = false
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 12
+	button.Text = LANGUAGE_LABELS[lang] or lang
+	button.TextColor3 = Color3.fromRGB(220, 231, 245)
+	button.ZIndex = 8
+	button.Parent = langHolder
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 10)
+	langButtons[lang] = button
+
+	trackConnection(button.MouseEnter:Connect(function()
+		if lang ~= currentLanguage then
+			tweenButton(button, Color3.fromRGB(27, 43, 68), Color3.fromRGB(244, 249, 255))
+		end
+	end))
+	trackConnection(button.MouseLeave:Connect(function()
+		refreshTexts()
+	end))
+	trackConnection(button.MouseButton1Click:Connect(function()
+		currentLanguage = lang
+		saveLanguage(lang)
+		refreshTexts()
+	end))
+end
+
+buildLangButton("en")
+buildLangButton("vi")
+buildLangButton("jp")
+
+trackConnection(closeButton.MouseEnter:Connect(function()
+	tweenButton(closeButton, Color3.fromRGB(54, 67, 88), Color3.fromRGB(255, 255, 255))
+end))
+trackConnection(closeButton.MouseLeave:Connect(function()
+	tweenButton(closeButton, Color3.fromRGB(33, 42, 58), Color3.fromRGB(244, 247, 252))
+end))
+trackConnection(rejoinButton.MouseEnter:Connect(function()
+	tweenButton(rejoinButton, Color3.fromRGB(110, 205, 255), Color3.fromRGB(7, 13, 23))
+end))
+trackConnection(rejoinButton.MouseLeave:Connect(function()
+	tweenButton(rejoinButton, Color3.fromRGB(78, 184, 255), Color3.fromRGB(8, 14, 24))
+end))
+
+local function notifyButton(button, textKey, duration)
+	local originalText = tr(textKey == "rejoinFailed" and "rejoin" or "close")
+	local temporary = tr(textKey)
+	button.Text = temporary
+	task.delay(duration or 1.2, function()
+		if button and button.Parent then
+			if button == rejoinButton then
+				button.Text = tr("rejoin")
+			elseif button == closeButton then
+				button.Text = tr("close")
+			else
+				button.Text = originalText
+			end
+		end
+	end)
+end
+
+trackConnection(closeButton.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end))
+
+trackConnection(rejoinButton.MouseButton1Click:Connect(function()
+	rejoinButton.Text = tr("rejoining")
+	local ok = pcall(function()
+		TeleportService:Teleport(game.PlaceId, localPlayer)
+	end)
+	if not ok and rejoinButton.Parent then
+		rejoinButton.Text = tr("rejoinFailed")
+		task.delay(1.3, function()
+			if rejoinButton and rejoinButton.Parent then
+				rejoinButton.Text = tr("rejoin")
+			end
+		end)
+	end
+end))
+
+for index = 1, AMBIENT_COUNT do
+	local dot = Instance.new("Frame")
+	dot.AnchorPoint = Vector2.new(0.5, 0.5)
+	dot.Size = UDim2.fromOffset(math.random(40, 120), math.random(40, 120))
+	dot.BackgroundColor3 = (index % 2 == 0) and Color3.fromRGB(54, 128, 255) or Color3.fromRGB(67, 217, 255)
+	dot.BackgroundTransparency = 0.9
+	dot.BorderSizePixel = 0
+	dot.Position = UDim2.new(math.random(), 0, math.random(), 0)
+	dot.Parent = ambientLayer
+	Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+	ambientDots[index] = {
+		object = dot,
+		baseX = math.random(),
+		baseY = math.random(),
+		radius = math.random(8, 24) / 100,
+		speed = math.random(8, 20) / 10,
+		phase = math.random() * math.pi * 2,
+	}
+end
+
+local function randomDigitText()
+	local length = math.random(1, 3)
+	local out = table.create(length)
+	for i = 1, length do
+		local n = math.random(1, #digitPool)
+		out[i] = digitPool:sub(n, n)
+	end
+	return table.concat(out)
+end
+
+local function respawnDigit(state, initial)
+	state.x = math.random(6, 94) / 100
+	state.y = initial and (math.random(0, 100) / 100) or (-0.16 - math.random() * 0.24)
+	state.speed = math.random(18, 45) / 1000
+	state.drift = (math.random() - 0.5) * 0.08
+	state.size = math.random(10, 18)
+	state.alpha = math.random(45, 72) / 100
+	state.object.Text = randomDigitText()
+	state.object.TextSize = state.size
+	state.object.TextTransparency = state.alpha
+end
+
+for i = 1, DIGIT_COUNT do
+	local label = Instance.new("TextLabel")
+	label.AnchorPoint = Vector2.new(0.5, 0.5)
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.fromOffset(28, 18)
+	label.Font = Enum.Font.Code
+	label.TextColor3 = Color3.fromRGB(94, 226, 255)
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.TextStrokeTransparency = 1
+	label.TextTransparency = 0.94
+	label.ZIndex = 1
+	label.Parent = digitLayer
+	digitLabels[i] = {
+		object = label,
+	}
+	respawnDigit(digitLabels[i], true)
+end
+
+setZIndexRecursive(creatorCard, 5)
+setZIndexRecursive(infoCard, 5)
+creatorTitle.ZIndex = 6
+creatorSubtitle.ZIndex = 6
+creatorUser.ZIndex = 6
+creatorTag.ZIndex = 6
+creatorBadge.ZIndex = 6
+avatarWrap.ZIndex = 6
+avatarImage.ZIndex = 7
+badge.ZIndex = 6
+maintenanceTitle.ZIndex = 6
+maintenanceBody.ZIndex = 6
+maintenanceNote.ZIndex = 6
+statusCard.ZIndex = 6
+statusTitle.ZIndex = 7
+footerLabel.ZIndex = 6
+statusHint.ZIndex = 6
+rejoinButton.ZIndex = 7
+bottomTextHolder.ZIndex = 6
+
+local function updateLayout()
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	local width = math.clamp(viewport.X - 80, 640, 860)
+	local height = math.clamp(viewport.Y - 90, 380, 430)
+	main.Size = UDim2.fromOffset(width, height)
+
+	local compactHeader = width < 760
+	if compactHeader then
+		header.Size = UDim2.new(1, -24, 0, 90)
+		contentHolder.Position = UDim2.fromOffset(14, 108)
+		contentHolder.Size = UDim2.new(1, -28, 1, -126)
+		titleLabel.Size = UDim2.new(1, 0, 0, 24)
+		subtitleLabel.Size = UDim2.new(1, 0, 0, 18)
+		langHolder.AnchorPoint = Vector2.new(0, 0)
+		langHolder.Position = UDim2.fromOffset(0, 48)
+		langHolder.Size = UDim2.new(1, -102, 0, 34)
+		closeButton.Position = UDim2.new(1, 0, 0, 48)
+	else
+		header.Size = UDim2.new(1, -24, 0, 54)
+		contentHolder.Position = UDim2.fromOffset(14, 74)
+		contentHolder.Size = UDim2.new(1, -28, 1, -92)
+		titleLabel.Size = UDim2.new(1, -404, 0, 26)
+		subtitleLabel.Size = UDim2.new(1, -404, 0, 18)
+		langHolder.AnchorPoint = Vector2.new(1, 0)
+		langHolder.Position = UDim2.new(1, -104, 0, 0)
+		langHolder.Size = UDim2.fromOffset(268, 34)
+		closeButton.Position = UDim2.new(1, 0, 0, 2)
+	end
+
+	if width < 760 then
+		contentLayout.FillDirection = Enum.FillDirection.Vertical
+		creatorCard.Size = UDim2.new(1, 0, 0, 224)
+		infoCard.Size = UDim2.new(1, 0, 0, math.max(170, height - 370))
+		avatarWrap.Position = UDim2.fromOffset(18, 62)
+		creatorTitle.TextXAlignment = Enum.TextXAlignment.Left
+		creatorTitle.Position = UDim2.fromOffset(162, 74)
+		creatorTitle.Size = UDim2.new(1, -176, 0, 24)
+		creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+		creatorSubtitle.Position = UDim2.fromOffset(162, 100)
+		creatorSubtitle.Size = UDim2.new(1, -176, 0, 18)
+		creatorUser.TextXAlignment = Enum.TextXAlignment.Left
+		creatorUser.Position = UDim2.fromOffset(162, 130)
+		creatorUser.Size = UDim2.new(1, -176, 0, 22)
+		creatorTag.TextXAlignment = Enum.TextXAlignment.Left
+		creatorTag.Position = UDim2.fromOffset(162, 154)
+		creatorTag.Size = UDim2.new(1, -176, 0, 18)
+		creatorUser.TextYAlignment = Enum.TextYAlignment.Center
+		creatorTag.TextYAlignment = Enum.TextYAlignment.Center
+		creatorBadge.Position = UDim2.fromOffset(18, 182)
+	else
+		contentLayout.FillDirection = Enum.FillDirection.Horizontal
+		creatorCard.Size = UDim2.fromOffset(252, 320)
+		infoCard.Size = UDim2.fromOffset(width - 294, 320)
+		avatarWrap.Position = UDim2.new(0.5, -64, 0, 72)
+		creatorTitle.TextXAlignment = Enum.TextXAlignment.Center
+		creatorTitle.Position = UDim2.fromOffset(12, 14)
+		creatorTitle.Size = UDim2.new(1, -24, 0, 26)
+		creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Center
+		creatorSubtitle.Position = UDim2.fromOffset(12, 40)
+		creatorSubtitle.Size = UDim2.new(1, -24, 0, 18)
+		creatorUser.TextXAlignment = Enum.TextXAlignment.Center
+		creatorUser.Position = UDim2.fromOffset(13, 214)
+		creatorUser.Size = UDim2.new(1, -26, 0, 22)
+		creatorTag.TextXAlignment = Enum.TextXAlignment.Center
+		creatorTag.Position = UDim2.fromOffset(13, 238)
+		creatorTag.Size = UDim2.new(1, -26, 0, 18)
+		creatorUser.TextYAlignment = Enum.TextYAlignment.Center
+		creatorTag.TextYAlignment = Enum.TextYAlignment.Center
+		creatorBadge.Position = UDim2.new(0.5, -71, 1, -42)
+	end
+
+	maintenanceTitle.Size = UDim2.new(1, -36, 0, compactHeader and 56 or 48)
+	maintenanceBody.Position = UDim2.fromOffset(18, compactHeader and 112 or 114)
+	maintenanceBody.Size = UDim2.new(1, -36, 0, compactHeader and 42 or 40)
+	maintenanceNote.Position = UDim2.fromOffset(18, compactHeader and 156 or 158)
+	maintenanceNote.Size = UDim2.new(1, -36, 0, compactHeader and 30 or 28)
+	statusCard.Position = UDim2.fromOffset(18, compactHeader and 194 or 196)
+	statusCard.Size = UDim2.new(1, -36, 0, compactHeader and 76 or 74)
+	bottomTextHolder.Size = UDim2.new(1, compactHeader and -36 or -228, 0, 34)
+	bottomTextHolder.Position = UDim2.new(0, 18, 1, compactHeader and -10 or -10)
+	rejoinButton.Position = UDim2.new(1, -18, 1, compactHeader and -10 or -10)
+	rejoinButton.Size = UDim2.fromOffset(compactHeader and 160 or 180, compactHeader and 34 or 36)
+	rejoinButton.TextSize = compactHeader and 12 or 13
+	statusHint.Visible = true
+end
+
+updateLayout()
+
+trackConnection(screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout))
+local camera = workspace.CurrentCamera
+if camera then
+	trackConnection(camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateLayout))
+end
+
+local timeElapsed = 0
+trackConnection(RunService.RenderStepped:Connect(function(dt)
+	timeElapsed = timeElapsed + dt
+	rootGradient.Rotation = 0
+	mainStroke.Transparency = 0.12
+	creatorStroke.Transparency = 0.1
+	infoStroke.Transparency = 0.08
+
+	for _, state in ipairs(digitLabels) do
+		if SHOW_DIGIT_EFFECT and digitLayer.Visible then
+			state.y = state.y + state.speed
+			state.x = state.x + (math.sin(timeElapsed + state.y * 9) * state.drift * dt * 18)
+			if state.y > 1.16 then
+				respawnDigit(state, false)
+			end
+			state.object.Visible = true
+			state.object.Position = UDim2.fromScale(state.x, state.y)
+		else
+			state.object.Visible = false
+		end
+	end
+end))
+
+refreshTexts()
+
