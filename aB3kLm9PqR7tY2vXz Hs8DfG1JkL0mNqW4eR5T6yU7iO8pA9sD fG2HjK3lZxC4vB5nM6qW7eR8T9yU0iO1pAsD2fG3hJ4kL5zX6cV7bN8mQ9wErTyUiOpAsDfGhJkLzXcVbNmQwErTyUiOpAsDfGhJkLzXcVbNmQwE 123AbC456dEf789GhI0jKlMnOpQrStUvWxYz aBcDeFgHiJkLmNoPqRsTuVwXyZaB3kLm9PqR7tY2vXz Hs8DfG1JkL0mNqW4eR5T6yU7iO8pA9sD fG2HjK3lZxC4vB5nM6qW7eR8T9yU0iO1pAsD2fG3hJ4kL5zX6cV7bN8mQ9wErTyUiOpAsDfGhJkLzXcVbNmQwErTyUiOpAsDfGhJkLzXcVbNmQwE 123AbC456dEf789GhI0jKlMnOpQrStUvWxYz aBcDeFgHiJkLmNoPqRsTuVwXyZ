@@ -11,7 +11,10 @@ end
 local PLAYER_GUI = localPlayer:WaitForChild("PlayerGui")
 local CREDIT_USER_ID = 9930783751
 local CREDIT_USERNAME = "CuongOutLook"
+local CREDIT_AVATAR_URL = "https://i.postimg.cc/sDLdpjTx/Picsart-26-04-14-06-54-03-382.jpg"
+local CREDIT_AVATAR_FILE = "CuongOutLook_credit_avatar.jpg"
 local LANGUAGE_FILE = "CuongOutLook_maintenance_lang.txt"
+local THEME_SOURCE_URL = "https://raw.githubusercontent.com/ChauChiCuong/firstlua/main/ThemeColor"
 local GUI_NAME = "CuongOutLookMaintenanceUI"
 local AMBIENT_COUNT = 14
 local DIGIT_COUNT = 18
@@ -27,7 +30,7 @@ local TEXTS = {
 		maintenanceNote = "Please rejoin later. The loader UI remains available during maintenance.",
 		creatorTitle = "Creator",
 		creatorSubtitle = "Official profile",
-		creatorUser = "Roblox User: CuongOutLook",
+		creatorUser = "Script Owner: CuongOutLook",
 		creatorTag = "Builder of COL",
 		statusTitle = "Current status",
 		statusLine1 = "Loader UI is online",
@@ -48,7 +51,7 @@ local TEXTS = {
 		maintenanceNote = "Vui lòng quay lại sau. Giao diện loader vẫn hoạt động trong thời gian bảo trì.",
 		creatorTitle = "Creator",
 		creatorSubtitle = "Hồ sơ chính thức",
-		creatorUser = "Người dùng Roblox: CuongOutLook",
+		creatorUser = "Chủ Script: CuongOutLook",
 		creatorTag = "Người xây dựng COL",
 		statusTitle = "Trạng thái hiện tại",
 		statusLine1 = "Giao diện loader vẫn online",
@@ -69,7 +72,7 @@ local TEXTS = {
 		maintenanceNote = "後でもう一度お試しください。メンテナンス中でもローダーUIは使用できます。",
 		creatorTitle = "Creator",
 		creatorSubtitle = "公式プロフィール",
-		creatorUser = "Robloxユーザー: CuongOutLook",
+		creatorUser = "スクリプトオーナー: CuongOutLook",
 		creatorTag = "COL の開発者",
 		statusTitle = "現在の状態",
 		statusLine1 = "ローダーUIは利用可能です",
@@ -101,6 +104,248 @@ local langButtons = {}
 local ambientDots = {}
 local digitLabels = {}
 local hoverTweens = {}
+
+local function trimTextValue(value)
+	if type(value) ~= "string" then
+		return nil
+	end
+	local trimmed = value:match("^%s*(.-)%s*$")
+	if trimmed == "" then
+		return nil
+	end
+	return trimmed
+end
+
+local function parseThemeColor(value)
+	if typeof(value) == "Color3" then
+		return value
+	end
+	local txt = trimTextValue(value)
+	if not txt then
+		return nil
+	end
+	txt = txt:gsub("^rgb%s*%(", ""):gsub("%)$", "")
+	local hex = txt:match("^#?(%x%x%x%x%x%x)$")
+	if hex then
+		return Color3.fromRGB(
+			tonumber(hex:sub(1, 2), 16),
+			tonumber(hex:sub(3, 4), 16),
+			tonumber(hex:sub(5, 6), 16)
+		)
+	end
+	local red, green, blue = txt:match("^(%-?%d+)%s*,%s*(%-?%d+)%s*,%s*(%-?%d+)$")
+	if red and green and blue then
+		return Color3.fromRGB(
+			math.clamp(tonumber(red) or 0, 0, 255),
+			math.clamp(tonumber(green) or 0, 0, 255),
+			math.clamp(tonumber(blue) or 0, 0, 255)
+		)
+	end
+	return nil
+end
+
+local function parseThemeConfig(rawText)
+	local data = {}
+	if type(rawText) ~= "string" or rawText == "" then
+		return data
+	end
+	for line in rawText:gmatch("[^\r\n]+") do
+		local clean = line:gsub("^%s+", ""):gsub("%s+$", "")
+		if clean ~= "" and not clean:match("^#") and not clean:match("^%-%-") then
+			local key, value = clean:match("^([%w_%.%-]+)%s*=%s*(.+)$")
+			if key and value then
+				data[key:lower()] = trimTextValue(value)
+			end
+		end
+	end
+	return data
+end
+
+local function normalizeThemeTable(rawTheme)
+	local normalized = {}
+	if type(rawTheme) ~= "table" then
+		return normalized
+	end
+	for key, value in pairs(rawTheme) do
+		if type(key) == "string" then
+			normalized[key:lower()] = value
+		end
+	end
+	return normalized
+end
+
+local function fetchRemoteThemeConfig()
+	local okResult, result = pcall(function()
+		if type(loadstring) ~= "function" then
+			return nil
+		end
+		local source = game:HttpGet(THEME_SOURCE_URL)
+		local chunk = loadstring(source)
+		if type(chunk) ~= "function" then
+			return nil
+		end
+		return chunk()
+	end)
+	if okResult then
+		if type(result) == "table" then
+			return normalizeThemeTable(result)
+		end
+		if type(result) == "string" then
+			return parseThemeConfig(result)
+		end
+	end
+
+	local okRaw, raw = pcall(function()
+		return game:HttpGet(THEME_SOURCE_URL)
+	end)
+	if okRaw and type(raw) == "string" and raw ~= "" then
+		return parseThemeConfig(raw)
+	end
+
+	return {}
+end
+
+local THEME = fetchRemoteThemeConfig()
+
+local function themeColor(key, fallback)
+	return parseThemeColor(THEME[tostring(key):lower()]) or fallback
+end
+
+local function getHttpRequestFunction()
+	if type(syn) == "table" and type(syn.request) == "function" then
+		return syn.request
+	end
+	if type(http_request) == "function" then
+		return http_request
+	end
+	if type(request) == "function" then
+		return request
+	end
+	if type(fluxus) == "table" and type(fluxus.request) == "function" then
+		return fluxus.request
+	end
+	return nil
+end
+
+local function getCustomAssetFunction()
+	if type(getcustomasset) == "function" then
+		return getcustomasset
+	end
+	if type(getsynasset) == "function" then
+		return getsynasset
+	end
+	return nil
+end
+
+local function resolveRemoteImageAsset(url, imageFile)
+	if type(url) ~= "string" or url == "" then
+		return nil
+	end
+	if type(imageFile) ~= "string" or imageFile == "" then
+		return nil
+	end
+
+	local customAsset = getCustomAssetFunction()
+	if not customAsset then
+		return nil
+	end
+
+	if type(isfile) == "function" then
+		local okExists, exists = pcall(isfile, imageFile)
+		if okExists and exists then
+			local okAsset, asset = pcall(customAsset, imageFile)
+			if okAsset and type(asset) == "string" and asset ~= "" then
+				return asset
+			end
+		end
+	end
+
+	if type(writefile) ~= "function" then
+		return nil
+	end
+
+	local body
+	local requestFn = getHttpRequestFunction()
+	if requestFn then
+		local okRequest, response = pcall(requestFn, {
+			Url = url,
+			Method = "GET",
+		})
+		if okRequest and type(response) == "table" then
+			local success = (response.Success ~= false)
+				and ((response.StatusCode == nil) or ((tonumber(response.StatusCode) or 0) < 400))
+			if success and type(response.Body) == "string" and response.Body ~= "" then
+				body = response.Body
+			end
+		end
+	end
+
+	if not body then
+		local okFetch, rawBody = pcall(function()
+			return game:HttpGet(url)
+		end)
+		if okFetch and type(rawBody) == "string" and rawBody ~= "" then
+			body = rawBody
+		end
+	end
+
+	if not body then
+		return nil
+	end
+
+	local okWrite = pcall(writefile, imageFile, body)
+	if not okWrite then
+		return nil
+	end
+
+	local okAsset, asset = pcall(customAsset, imageFile)
+	if okAsset and type(asset) == "string" and asset ~= "" then
+		return asset
+	end
+
+	return nil
+end
+
+local CREDIT_AVATAR_ASSET = resolveRemoteImageAsset(CREDIT_AVATAR_URL, CREDIT_AVATAR_FILE)
+
+local UI_THEME = {
+	rootBackground = themeColor("bg", Color3.fromRGB(4, 8, 16)),
+	rootOverlay = themeColor("dark", Color3.fromRGB(2, 5, 10)),
+	panelBackground = themeColor("panel", Color3.fromRGB(9, 16, 28)),
+	panelBackgroundSoft = themeColor("panel", Color3.fromRGB(10, 18, 31)),
+	panelBackgroundAlt = themeColor("panel", Color3.fromRGB(11, 19, 32)),
+	panelBackgroundDeep = themeColor("dark", Color3.fromRGB(8, 14, 26)),
+	panelAccent = themeColor("acc", Color3.fromRGB(78, 184, 255)),
+	panelAccentSoft = themeColor("on", Color3.fromRGB(110, 205, 255)),
+	panelAccentMuted = themeColor("fx_soft", Color3.fromRGB(80, 196, 255)),
+	panelStroke = themeColor("menu_stroke", Color3.fromRGB(64, 121, 179)),
+	panelStrokeSoft = themeColor("content_stroke", Color3.fromRGB(48, 96, 150)),
+	panelStrokeMuted = themeColor("function_row_stroke", Color3.fromRGB(35, 68, 108)),
+	panelHighlight = themeColor("menu_shade", Color3.fromRGB(18, 44, 66)),
+	buttonSecondary = themeColor("btn_secondary", Color3.fromRGB(33, 42, 58)),
+	buttonSecondaryHover = themeColor("tab_hover_bg", Color3.fromRGB(54, 67, 88)),
+	buttonPrimary = themeColor("btn_primary", Color3.fromRGB(78, 184, 255)),
+	buttonPrimaryHover = themeColor("btn_primary_hover", Color3.fromRGB(110, 205, 255)),
+	buttonPrimaryText = themeColor("dark", Color3.fromRGB(8, 14, 24)),
+	buttonActiveText = themeColor("dark", Color3.fromRGB(11, 19, 31)),
+	textPrimary = themeColor("txt", Color3.fromRGB(244, 247, 255)),
+	textPrimarySoft = themeColor("txt", Color3.fromRGB(242, 247, 255)),
+	textSecondary = themeColor("txtm", Color3.fromRGB(185, 200, 220)),
+	textMuted = themeColor("txtm", Color3.fromRGB(140, 168, 196)),
+	textMutedSoft = themeColor("txtm", Color3.fromRGB(132, 157, 182)),
+	textSubtle = themeColor("txtm", Color3.fromRGB(108, 137, 170)),
+	textOnDark = themeColor("wht", Color3.fromRGB(255, 255, 255)),
+	textLang = themeColor("lang_btn_text", Color3.fromRGB(220, 231, 245)),
+	langButton = themeColor("lang_btn_bg", Color3.fromRGB(18, 30, 49)),
+	langButtonHover = themeColor("lang_btn_hover_bg", Color3.fromRGB(27, 43, 68)),
+	badgeBackground = themeColor("tab_hint_bg", Color3.fromRGB(14, 34, 52)),
+	badgeText = themeColor("tab_hint_text", Color3.fromRGB(117, 223, 255)),
+	statusDot = themeColor("on", Color3.fromRGB(86, 220, 255)),
+	avatarStroke = themeColor("fx_soft", Color3.fromRGB(90, 196, 255)),
+	ambientPrimary = themeColor("fx_soft", Color3.fromRGB(67, 217, 255)),
+	ambientSecondary = themeColor("fx_deep", Color3.fromRGB(54, 128, 255)),
+	digit = themeColor("fx_digit", Color3.fromRGB(94, 226, 255)),
+}
 
 local function trackConnection(connection)
 	if connection then
@@ -200,8 +445,8 @@ local function refreshTexts()
 	for lang, button in pairs(langButtons) do
 		if button and button.Parent then
 			local active = lang == currentLanguage
-			button.BackgroundColor3 = active and Color3.fromRGB(73, 176, 255) or Color3.fromRGB(18, 30, 49)
-			button.TextColor3 = active and Color3.fromRGB(11, 19, 31) or Color3.fromRGB(220, 231, 245)
+			button.BackgroundColor3 = active and UI_THEME.panelAccent or UI_THEME.langButton
+			button.TextColor3 = active and UI_THEME.buttonActiveText or UI_THEME.textLang
 		end
 	end
 end
@@ -228,15 +473,15 @@ end
 
 local root = Instance.new("Frame")
 root.Size = UDim2.fromScale(1, 1)
-root.BackgroundColor3 = Color3.fromRGB(4, 8, 16)
+root.BackgroundColor3 = UI_THEME.rootBackground
 root.BorderSizePixel = 0
 root.Parent = screenGui
 
 local rootGradient = Instance.new("UIGradient", root)
 rootGradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(4, 8, 16)),
-	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(4, 8, 16)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 8, 16)),
+	ColorSequenceKeypoint.new(0, UI_THEME.rootBackground),
+	ColorSequenceKeypoint.new(0.5, UI_THEME.rootBackground),
+	ColorSequenceKeypoint.new(1, UI_THEME.rootBackground),
 })
 rootGradient.Rotation = 18
 
@@ -250,7 +495,7 @@ ambientLayer.Parent = root
 
 local blurOverlay = Instance.new("Frame")
 blurOverlay.Size = UDim2.fromScale(1, 1)
-blurOverlay.BackgroundColor3 = Color3.fromRGB(2, 5, 10)
+blurOverlay.BackgroundColor3 = UI_THEME.rootOverlay
 blurOverlay.BackgroundTransparency = 1
 blurOverlay.BorderSizePixel = 0
 blurOverlay.ZIndex = 1
@@ -261,7 +506,7 @@ local main = Instance.new("Frame")
 main.AnchorPoint = Vector2.new(0.5, 0.5)
 main.Position = UDim2.fromScale(0.5, 0.5)
 main.Size = UDim2.fromOffset(860, 430)
-main.BackgroundColor3 = Color3.fromRGB(9, 16, 28)
+main.BackgroundColor3 = UI_THEME.panelBackground
 main.BackgroundTransparency = 0.08
 main.BorderSizePixel = 0
 main.Parent = root
@@ -271,15 +516,15 @@ main.ZIndex = 2
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 24)
 
 local mainStroke = Instance.new("UIStroke", main)
-mainStroke.Color = Color3.fromRGB(64, 121, 179)
+mainStroke.Color = UI_THEME.panelStroke
 mainStroke.Thickness = 1.6
 mainStroke.Transparency = 0.12
 
 local mainGradient = Instance.new("UIGradient", main)
 mainGradient.Color = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(11, 20, 34)),
-	ColorSequenceKeypoint.new(0.55, Color3.fromRGB(8, 15, 27)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 11, 22)),
+	ColorSequenceKeypoint.new(0, UI_THEME.panelBackgroundAlt),
+	ColorSequenceKeypoint.new(0.55, UI_THEME.panelBackground),
+	ColorSequenceKeypoint.new(1, UI_THEME.panelBackgroundDeep),
 })
 mainGradient.Rotation = 135
 
@@ -287,7 +532,7 @@ local glow = Instance.new("Frame")
 glow.AnchorPoint = Vector2.new(0.5, 0.5)
 glow.Position = UDim2.fromScale(0.5, 0.08)
 glow.Size = UDim2.fromOffset(480, 150)
-glow.BackgroundColor3 = Color3.fromRGB(80, 196, 255)
+glow.BackgroundColor3 = UI_THEME.panelAccentMuted
 glow.BackgroundTransparency = 1
 glow.BorderSizePixel = 0
 glow.ZIndex = 2
@@ -315,7 +560,7 @@ titleLabel.Size = UDim2.new(1, -404, 0, 26)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 21
-titleLabel.TextColor3 = Color3.fromRGB(242, 247, 255)
+titleLabel.TextColor3 = UI_THEME.textPrimarySoft
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.TextYAlignment = Enum.TextYAlignment.Center
 titleLabel.ZIndex = 7
@@ -328,7 +573,7 @@ subtitleLabel.Position = UDim2.fromOffset(0, 30)
 subtitleLabel.BackgroundTransparency = 1
 subtitleLabel.Font = Enum.Font.Gotham
 subtitleLabel.TextSize = 11
-subtitleLabel.TextColor3 = Color3.fromRGB(140, 168, 196)
+subtitleLabel.TextColor3 = UI_THEME.textMuted
 subtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 subtitleLabel.TextYAlignment = Enum.TextYAlignment.Center
 subtitleLabel.ZIndex = 7
@@ -353,12 +598,12 @@ local closeButton = Instance.new("TextButton")
 closeButton.AnchorPoint = Vector2.new(1, 0)
 closeButton.Position = UDim2.new(1, 0, 0, 2)
 closeButton.Size = UDim2.fromOffset(92, 30)
-closeButton.BackgroundColor3 = Color3.fromRGB(33, 42, 58)
+closeButton.BackgroundColor3 = UI_THEME.buttonSecondary
 closeButton.BorderSizePixel = 0
 closeButton.AutoButtonColor = false
 closeButton.Font = Enum.Font.GothamBold
 closeButton.TextSize = 12
-closeButton.TextColor3 = Color3.fromRGB(244, 247, 252)
+closeButton.TextColor3 = UI_THEME.textPrimary
 closeButton.ZIndex = 8
 closeButton.Parent = header
 Instance.new("UICorner", closeButton).CornerRadius = UDim.new(0, 10)
@@ -380,7 +625,7 @@ contentLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 local creatorCard = Instance.new("Frame")
 creatorCard.Name = "CreatorCard"
 creatorCard.Size = UDim2.fromOffset(252, 320)
-creatorCard.BackgroundColor3 = Color3.fromRGB(10, 18, 31)
+creatorCard.BackgroundColor3 = UI_THEME.panelBackgroundSoft
 creatorCard.BorderSizePixel = 0
 creatorCard.ZIndex = 5
 creatorCard.Parent = contentHolder
@@ -388,7 +633,7 @@ creatorCard.ClipsDescendants = true
 Instance.new("UICorner", creatorCard).CornerRadius = UDim.new(0, 22)
 
 local creatorStroke = Instance.new("UIStroke", creatorCard)
-creatorStroke.Color = Color3.fromRGB(45, 88, 138)
+creatorStroke.Color = UI_THEME.panelStrokeSoft
 creatorStroke.Thickness = 1.2
 creatorStroke.Transparency = 0.1
 
@@ -396,7 +641,7 @@ local creatorGlow = Instance.new("Frame")
 creatorGlow.AnchorPoint = Vector2.new(0.5, 0)
 creatorGlow.Position = UDim2.new(0.5, 0, 0, 12)
 creatorGlow.Size = UDim2.fromOffset(132, 30)
-creatorGlow.BackgroundColor3 = Color3.fromRGB(18, 44, 66)
+creatorGlow.BackgroundColor3 = UI_THEME.panelHighlight
 creatorGlow.BackgroundTransparency = 0.18
 creatorGlow.BorderSizePixel = 0
 creatorGlow.ZIndex = 5
@@ -409,7 +654,7 @@ creatorTitle.Position = UDim2.fromOffset(12, 14)
 creatorTitle.BackgroundTransparency = 1
 creatorTitle.Font = Enum.Font.GothamBold
 creatorTitle.TextSize = 18
-creatorTitle.TextColor3 = Color3.fromRGB(241, 246, 255)
+creatorTitle.TextColor3 = UI_THEME.textPrimarySoft
 creatorTitle.TextXAlignment = Enum.TextXAlignment.Center
 creatorTitle.TextYAlignment = Enum.TextYAlignment.Center
 creatorTitle.ZIndex = 6
@@ -422,7 +667,7 @@ creatorSubtitle.Position = UDim2.fromOffset(12, 40)
 creatorSubtitle.BackgroundTransparency = 1
 creatorSubtitle.Font = Enum.Font.Gotham
 creatorSubtitle.TextSize = 11
-creatorSubtitle.TextColor3 = Color3.fromRGB(135, 155, 182)
+creatorSubtitle.TextColor3 = UI_THEME.textMutedSoft
 creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Center
 creatorSubtitle.TextYAlignment = Enum.TextYAlignment.Center
 creatorSubtitle.ZIndex = 6
@@ -432,31 +677,33 @@ bindText(creatorSubtitle, "creatorSubtitle")
 local avatarWrap = Instance.new("Frame")
 avatarWrap.Size = UDim2.fromOffset(128, 128)
 avatarWrap.Position = UDim2.new(0.5, -64, 0, 72)
-avatarWrap.BackgroundColor3 = Color3.fromRGB(8, 16, 28)
+avatarWrap.BackgroundColor3 = UI_THEME.panelBackgroundDeep
 avatarWrap.BorderSizePixel = 0
 avatarWrap.ZIndex = 6
 avatarWrap.Parent = creatorCard
 Instance.new("UICorner", avatarWrap).CornerRadius = UDim.new(1, 0)
 
 local avatarStroke = Instance.new("UIStroke", avatarWrap)
-avatarStroke.Color = Color3.fromRGB(90, 196, 255)
+avatarStroke.Color = UI_THEME.avatarStroke
 avatarStroke.Thickness = 1.5
 
 local avatarImage = Instance.new("ImageLabel")
 avatarImage.Size = UDim2.new(1, -12, 1, -12)
 avatarImage.Position = UDim2.fromOffset(6, 6)
 avatarImage.BackgroundTransparency = 1
-avatarImage.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=420&h=420", CREDIT_USER_ID)
+avatarImage.Image = CREDIT_AVATAR_ASSET or string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=420&h=420", CREDIT_USER_ID)
 avatarImage.ScaleType = Enum.ScaleType.Crop
 avatarImage.ZIndex = 7
 avatarImage.Parent = avatarWrap
 Instance.new("UICorner", avatarImage).CornerRadius = UDim.new(1, 0)
-pcall(function()
-	local thumb = Players:GetUserThumbnailAsync(CREDIT_USER_ID, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
-	if thumb and thumb ~= "" then
-		avatarImage.Image = thumb
-	end
-end)
+if not CREDIT_AVATAR_ASSET then
+	pcall(function()
+		local thumb = Players:GetUserThumbnailAsync(CREDIT_USER_ID, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+		if thumb and thumb ~= "" then
+			avatarImage.Image = thumb
+		end
+	end)
+end
 
 local creatorUser = Instance.new("TextLabel")
 creatorUser.Size = UDim2.new(1, -26, 0, 22)
@@ -464,7 +711,7 @@ creatorUser.Position = UDim2.fromOffset(13, 214)
 creatorUser.BackgroundTransparency = 1
 creatorUser.Font = Enum.Font.GothamBold
 creatorUser.TextSize = 14
-creatorUser.TextColor3 = Color3.fromRGB(244, 247, 255)
+creatorUser.TextColor3 = UI_THEME.textPrimary
 creatorUser.TextXAlignment = Enum.TextXAlignment.Center
 creatorUser.TextYAlignment = Enum.TextYAlignment.Center
 creatorUser.ZIndex = 6
@@ -477,7 +724,7 @@ creatorTag.Position = UDim2.fromOffset(13, 238)
 creatorTag.BackgroundTransparency = 1
 creatorTag.Font = Enum.Font.Gotham
 creatorTag.TextSize = 12
-creatorTag.TextColor3 = Color3.fromRGB(157, 187, 214)
+creatorTag.TextColor3 = UI_THEME.textSecondary
 creatorTag.TextXAlignment = Enum.TextXAlignment.Center
 creatorTag.TextYAlignment = Enum.TextYAlignment.Center
 creatorTag.ZIndex = 6
@@ -487,11 +734,11 @@ bindText(creatorTag, "creatorTag")
 local creatorBadge = Instance.new("TextLabel")
 creatorBadge.Size = UDim2.fromOffset(142, 28)
 creatorBadge.Position = UDim2.new(0.5, -71, 1, -42)
-creatorBadge.BackgroundColor3 = Color3.fromRGB(15, 34, 50)
+creatorBadge.BackgroundColor3 = UI_THEME.badgeBackground
 creatorBadge.BorderSizePixel = 0
 creatorBadge.Font = Enum.Font.GothamBold
 creatorBadge.TextSize = 12
-creatorBadge.TextColor3 = Color3.fromRGB(124, 225, 255)
+creatorBadge.TextColor3 = UI_THEME.badgeText
 creatorBadge.Text = "@" .. CREDIT_USERNAME
 creatorBadge.TextYAlignment = Enum.TextYAlignment.Center
 creatorBadge.ZIndex = 6
@@ -501,7 +748,7 @@ Instance.new("UICorner", creatorBadge).CornerRadius = UDim.new(0, 10)
 local infoCard = Instance.new("Frame")
 infoCard.Name = "InfoCard"
 infoCard.Size = UDim2.fromOffset(566, 320)
-infoCard.BackgroundColor3 = Color3.fromRGB(11, 19, 32)
+infoCard.BackgroundColor3 = UI_THEME.panelBackgroundAlt
 infoCard.BorderSizePixel = 0
 infoCard.ZIndex = 5
 infoCard.Parent = contentHolder
@@ -509,18 +756,18 @@ infoCard.ClipsDescendants = true
 Instance.new("UICorner", infoCard).CornerRadius = UDim.new(0, 22)
 
 local infoStroke = Instance.new("UIStroke", infoCard)
-infoStroke.Color = Color3.fromRGB(48, 96, 150)
+infoStroke.Color = UI_THEME.panelStrokeSoft
 infoStroke.Thickness = 1.2
 infoStroke.Transparency = 0.08
 
 local badge = Instance.new("TextLabel")
 badge.Size = UDim2.fromOffset(188, 32)
 badge.Position = UDim2.fromOffset(18, 18)
-badge.BackgroundColor3 = Color3.fromRGB(14, 34, 52)
+badge.BackgroundColor3 = UI_THEME.badgeBackground
 badge.BorderSizePixel = 0
 badge.Font = Enum.Font.GothamBold
 badge.TextSize = 12
-badge.TextColor3 = Color3.fromRGB(117, 223, 255)
+badge.TextColor3 = UI_THEME.badgeText
 badge.TextYAlignment = Enum.TextYAlignment.Center
 badge.ZIndex = 6
 badge.Parent = infoCard
@@ -534,7 +781,7 @@ maintenanceTitle.BackgroundTransparency = 1
 maintenanceTitle.Font = Enum.Font.GothamBold
 maintenanceTitle.TextSize = 28
 maintenanceTitle.TextWrapped = true
-maintenanceTitle.TextColor3 = Color3.fromRGB(244, 248, 255)
+maintenanceTitle.TextColor3 = UI_THEME.textPrimary
 maintenanceTitle.TextXAlignment = Enum.TextXAlignment.Left
 maintenanceTitle.TextYAlignment = Enum.TextYAlignment.Top
 maintenanceTitle.ZIndex = 6
@@ -548,7 +795,7 @@ maintenanceBody.BackgroundTransparency = 1
 maintenanceBody.Font = Enum.Font.Gotham
 maintenanceBody.TextSize = 14
 maintenanceBody.TextWrapped = true
-maintenanceBody.TextColor3 = Color3.fromRGB(185, 200, 220)
+maintenanceBody.TextColor3 = UI_THEME.textSecondary
 maintenanceBody.TextXAlignment = Enum.TextXAlignment.Left
 maintenanceBody.TextYAlignment = Enum.TextYAlignment.Top
 maintenanceBody.ZIndex = 6
@@ -562,7 +809,7 @@ maintenanceNote.BackgroundTransparency = 1
 maintenanceNote.Font = Enum.Font.Gotham
 maintenanceNote.TextSize = 12
 maintenanceNote.TextWrapped = true
-maintenanceNote.TextColor3 = Color3.fromRGB(132, 157, 182)
+maintenanceNote.TextColor3 = UI_THEME.textMutedSoft
 maintenanceNote.TextXAlignment = Enum.TextXAlignment.Left
 maintenanceNote.TextYAlignment = Enum.TextYAlignment.Top
 maintenanceNote.ZIndex = 6
@@ -572,14 +819,14 @@ bindText(maintenanceNote, "maintenanceNote")
 local statusCard = Instance.new("Frame")
 statusCard.Size = UDim2.new(1, -36, 0, 74)
 statusCard.Position = UDim2.fromOffset(18, 196)
-statusCard.BackgroundColor3 = Color3.fromRGB(8, 14, 26)
+statusCard.BackgroundColor3 = UI_THEME.panelBackgroundDeep
 statusCard.BorderSizePixel = 0
 statusCard.ZIndex = 6
 statusCard.Parent = infoCard
 Instance.new("UICorner", statusCard).CornerRadius = UDim.new(0, 16)
 
 local statusStroke = Instance.new("UIStroke", statusCard)
-statusStroke.Color = Color3.fromRGB(35, 68, 108)
+statusStroke.Color = UI_THEME.panelStrokeMuted
 statusStroke.Thickness = 1
 statusStroke.Transparency = 0.08
 
@@ -597,7 +844,7 @@ statusTitle.Position = UDim2.fromOffset(12, 10)
 statusTitle.BackgroundTransparency = 1
 statusTitle.Font = Enum.Font.GothamBold
 statusTitle.TextSize = 13
-statusTitle.TextColor3 = Color3.fromRGB(244, 247, 253)
+statusTitle.TextColor3 = UI_THEME.textPrimary
 statusTitle.TextXAlignment = Enum.TextXAlignment.Left
 statusTitle.TextYAlignment = Enum.TextYAlignment.Center
 statusTitle.ZIndex = 7
@@ -609,7 +856,7 @@ local function createStatusLine(order, key)
 	local dot = Instance.new("Frame")
 	dot.Size = UDim2.fromOffset(8, 8)
 	dot.Position = UDim2.fromOffset(14, rowTop + 3)
-	dot.BackgroundColor3 = Color3.fromRGB(86, 220, 255)
+	dot.BackgroundColor3 = UI_THEME.statusDot
 	dot.BorderSizePixel = 0
 	dot.ZIndex = 7
 	dot.Parent = statusCard
@@ -621,7 +868,7 @@ local function createStatusLine(order, key)
 	line.BackgroundTransparency = 1
 	line.Font = Enum.Font.Gotham
 	line.TextSize = 11
-	line.TextColor3 = Color3.fromRGB(181, 198, 220)
+	line.TextColor3 = UI_THEME.textSecondary
 	line.TextXAlignment = Enum.TextXAlignment.Left
 	line.TextYAlignment = Enum.TextYAlignment.Center
 	line.ZIndex = 7
@@ -640,7 +887,7 @@ footerLabel.Position = UDim2.new(0, 0, 1, 0)
 footerLabel.BackgroundTransparency = 1
 footerLabel.Font = Enum.Font.Gotham
 footerLabel.TextSize = 12
-footerLabel.TextColor3 = Color3.fromRGB(108, 137, 170)
+footerLabel.TextColor3 = UI_THEME.textSubtle
 footerLabel.TextXAlignment = Enum.TextXAlignment.Left
 footerLabel.TextYAlignment = Enum.TextYAlignment.Center
 footerLabel.ZIndex = 6
@@ -651,12 +898,12 @@ local rejoinButton = Instance.new("TextButton")
 rejoinButton.AnchorPoint = Vector2.new(1, 1)
 rejoinButton.Position = UDim2.new(1, -18, 1, -10)
 rejoinButton.Size = UDim2.fromOffset(180, 36)
-rejoinButton.BackgroundColor3 = Color3.fromRGB(78, 184, 255)
+rejoinButton.BackgroundColor3 = UI_THEME.buttonPrimary
 rejoinButton.BorderSizePixel = 0
 rejoinButton.AutoButtonColor = false
 rejoinButton.Font = Enum.Font.GothamBold
 rejoinButton.TextSize = 13
-rejoinButton.TextColor3 = Color3.fromRGB(8, 14, 24)
+rejoinButton.TextColor3 = UI_THEME.buttonPrimaryText
 rejoinButton.ZIndex = 7
 rejoinButton.Parent = infoCard
 Instance.new("UICorner", rejoinButton).CornerRadius = UDim.new(0, 14)
@@ -669,7 +916,7 @@ statusHint.Position = UDim2.fromOffset(0, 0)
 statusHint.BackgroundTransparency = 1
 statusHint.Font = Enum.Font.Gotham
 statusHint.TextSize = 11
-statusHint.TextColor3 = Color3.fromRGB(126, 155, 185)
+statusHint.TextColor3 = UI_THEME.textMutedSoft
 statusHint.TextXAlignment = Enum.TextXAlignment.Left
 statusHint.TextYAlignment = Enum.TextYAlignment.Center
 statusHint.TextWrapped = false
@@ -692,13 +939,13 @@ end
 local function buildLangButton(lang)
 	local button = Instance.new("TextButton")
 	button.Size = UDim2.fromOffset(86, 34)
-	button.BackgroundColor3 = Color3.fromRGB(18, 30, 49)
+	button.BackgroundColor3 = UI_THEME.langButton
 	button.BorderSizePixel = 0
 	button.AutoButtonColor = false
 	button.Font = Enum.Font.GothamBold
 	button.TextSize = 12
 	button.Text = LANGUAGE_LABELS[lang] or lang
-	button.TextColor3 = Color3.fromRGB(220, 231, 245)
+	button.TextColor3 = UI_THEME.textLang
 	button.ZIndex = 8
 	button.Parent = langHolder
 	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 10)
@@ -706,7 +953,7 @@ local function buildLangButton(lang)
 
 	trackConnection(button.MouseEnter:Connect(function()
 		if lang ~= currentLanguage then
-			tweenButton(button, Color3.fromRGB(27, 43, 68), Color3.fromRGB(244, 249, 255))
+			tweenButton(button, UI_THEME.langButtonHover, UI_THEME.textPrimary)
 		end
 	end))
 	trackConnection(button.MouseLeave:Connect(function()
@@ -724,16 +971,16 @@ buildLangButton("vi")
 buildLangButton("jp")
 
 trackConnection(closeButton.MouseEnter:Connect(function()
-	tweenButton(closeButton, Color3.fromRGB(54, 67, 88), Color3.fromRGB(255, 255, 255))
+	tweenButton(closeButton, UI_THEME.buttonSecondaryHover, UI_THEME.textOnDark)
 end))
 trackConnection(closeButton.MouseLeave:Connect(function()
-	tweenButton(closeButton, Color3.fromRGB(33, 42, 58), Color3.fromRGB(244, 247, 252))
+	tweenButton(closeButton, UI_THEME.buttonSecondary, UI_THEME.textPrimary)
 end))
 trackConnection(rejoinButton.MouseEnter:Connect(function()
-	tweenButton(rejoinButton, Color3.fromRGB(110, 205, 255), Color3.fromRGB(7, 13, 23))
+	tweenButton(rejoinButton, UI_THEME.buttonPrimaryHover, UI_THEME.buttonPrimaryText)
 end))
 trackConnection(rejoinButton.MouseLeave:Connect(function()
-	tweenButton(rejoinButton, Color3.fromRGB(78, 184, 255), Color3.fromRGB(8, 14, 24))
+	tweenButton(rejoinButton, UI_THEME.buttonPrimary, UI_THEME.buttonPrimaryText)
 end))
 
 local function notifyButton(button, textKey, duration)
@@ -776,7 +1023,7 @@ for index = 1, AMBIENT_COUNT do
 	local dot = Instance.new("Frame")
 	dot.AnchorPoint = Vector2.new(0.5, 0.5)
 	dot.Size = UDim2.fromOffset(math.random(40, 120), math.random(40, 120))
-	dot.BackgroundColor3 = (index % 2 == 0) and Color3.fromRGB(54, 128, 255) or Color3.fromRGB(67, 217, 255)
+	dot.BackgroundColor3 = (index % 2 == 0) and UI_THEME.ambientSecondary or UI_THEME.ambientPrimary
 	dot.BackgroundTransparency = 0.9
 	dot.BorderSizePixel = 0
 	dot.Position = UDim2.new(math.random(), 0, math.random(), 0)
@@ -820,7 +1067,7 @@ for i = 1, DIGIT_COUNT do
 	label.BackgroundTransparency = 1
 	label.Size = UDim2.fromOffset(28, 18)
 	label.Font = Enum.Font.Code
-	label.TextColor3 = Color3.fromRGB(94, 226, 255)
+	label.TextColor3 = UI_THEME.digit
 	label.TextYAlignment = Enum.TextYAlignment.Center
 	label.TextStrokeTransparency = 1
 	label.TextTransparency = 0.94
