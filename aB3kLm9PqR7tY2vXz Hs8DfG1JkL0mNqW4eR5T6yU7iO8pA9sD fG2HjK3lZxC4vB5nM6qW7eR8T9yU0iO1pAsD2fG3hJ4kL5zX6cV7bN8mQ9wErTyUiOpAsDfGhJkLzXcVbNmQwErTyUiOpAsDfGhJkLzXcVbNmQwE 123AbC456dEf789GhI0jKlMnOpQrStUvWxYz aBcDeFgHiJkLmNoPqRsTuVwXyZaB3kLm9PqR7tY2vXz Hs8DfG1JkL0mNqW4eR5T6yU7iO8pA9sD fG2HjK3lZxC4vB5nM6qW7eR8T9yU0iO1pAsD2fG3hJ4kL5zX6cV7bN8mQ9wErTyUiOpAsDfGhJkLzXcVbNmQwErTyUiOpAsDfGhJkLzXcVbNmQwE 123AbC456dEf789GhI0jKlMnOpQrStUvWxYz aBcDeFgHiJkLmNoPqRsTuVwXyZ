@@ -638,8 +638,8 @@ main.BackgroundColor3 = UI_THEME.panelBackground
 main.BackgroundTransparency = 0.08
 main.BorderSizePixel = 0
 main.Parent = root
-main.Active = true
-main.Draggable = true
+main.Active = false
+main.Draggable = false
 main.ZIndex = 2
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 24)
 
