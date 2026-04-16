@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
@@ -11,15 +12,21 @@ end
 local PLAYER_GUI = localPlayer:WaitForChild("PlayerGui")
 local CREDIT_USER_ID = 9930783751
 local CREDIT_USERNAME = "CuongOutLook"
+local DISCORD_DM_URL = "https://discord.com/users/535824717785858059"
 local CREDIT_AVATAR_URL = "https://i.postimg.cc/sDLdpjTx/Picsart-26-04-14-06-54-03-382.jpg"
 local CREDIT_AVATAR_FILE = "CuongOutLook_credit_avatar.jpg"
 local LANGUAGE_FILE = "CuongOutLook_maintenance_lang.txt"
+local HEADER_SOURCE_URL = "https://raw.githubusercontent.com/ChauChiCuong/firstlua/refs/heads/main/Header.txt"
 local THEME_SOURCE_URL = "https://raw.githubusercontent.com/ChauChiCuong/firstlua/main/ThemeColor"
 local GUI_NAME = "CuongOutLookMaintenanceUI"
 local AMBIENT_COUNT = 14
 local DIGIT_COUNT = 18
 local digitPool = "COL0123456789@#"
 local SHOW_DIGIT_EFFECT = false
+local BASE_MAIN_WIDTH = 860
+local BASE_MAIN_HEIGHT = 430
+local TITLE_MAX_TEXT_SIZE = 21
+local TITLE_MIN_TEXT_SIZE = 11
 
 local TEXTS = {
 	en = {
@@ -32,6 +39,9 @@ local TEXTS = {
 		creatorSubtitle = "Official profile",
 		creatorUser = "Script Owner: CuongOutLook",
 		creatorTag = "Builder of COL",
+		discordCopy = "Copy Discord DM Link",
+		discordCopied = "Discord link copied",
+		discordCopyFailed = "Clipboard unavailable",
 		statusTitle = "Current status",
 		statusLine1 = "Loader UI is online",
 		statusLine2 = "Main COL source is paused",
@@ -53,6 +63,9 @@ local TEXTS = {
 		creatorSubtitle = "Hồ sơ chính thức",
 		creatorUser = "Chủ Script: CuongOutLook",
 		creatorTag = "Người xây dựng COL",
+		discordCopy = "Copy Link Discord DM",
+		discordCopied = "Đã copy link Discord",
+		discordCopyFailed = "Không hỗ trợ clipboard",
 		statusTitle = "Trạng thái hiện tại",
 		statusLine1 = "Giao diện loader vẫn online",
 		statusLine2 = "Source COL chính đang tạm dừng",
@@ -74,6 +87,9 @@ local TEXTS = {
 		creatorSubtitle = "公式プロフィール",
 		creatorUser = "スクリプトオーナー: CuongOutLook",
 		creatorTag = "COL の開発者",
+		discordCopy = "Discord DMリンクをコピー",
+		discordCopied = "Discordリンクをコピーしました",
+		discordCopyFailed = "クリップボードは使えません",
 		statusTitle = "現在の状態",
 		statusLine1 = "ローダーUIは利用可能です",
 		statusLine2 = "COL 本体は一時停止中です",
@@ -104,6 +120,7 @@ local langButtons = {}
 local ambientDots = {}
 local digitLabels = {}
 local hoverTweens = {}
+local titleLabel
 
 local function trimTextValue(value)
 	if type(value) ~= "string" then
@@ -161,6 +178,71 @@ local function parseThemeConfig(rawText)
 	return data
 end
 
+local function resolveRemoteHeaderTitle(rawText)
+	local trimmed = trimTextValue(rawText)
+	if not trimmed then
+		return nil
+	end
+
+	local okLoad, chunk = pcall(function()
+		return loadstring(rawText)
+	end)
+	if okLoad and type(chunk) == "function" then
+		local okResult, result = pcall(chunk)
+		if okResult then
+			if type(result) == "string" then
+				return trimTextValue(result)
+			end
+			if type(result) == "table" then
+				return trimTextValue(result.title)
+					or trimTextValue(result.header)
+					or trimTextValue(result.text)
+					or trimTextValue(result[1])
+			end
+		end
+	end
+
+	local unquoted = trimmed:match('^"(.*)"$') or trimmed:match("^'(.*)'$")
+	return trimTextValue(unquoted) or trimmed
+end
+
+local function fetchRemoteHeaderTitle(defaultTitle)
+	local okResult, result = pcall(function()
+		if type(loadstring) ~= "function" then
+			return nil
+		end
+		local source = game:HttpGet(HEADER_SOURCE_URL)
+		local chunk = loadstring(source)
+		if type(chunk) ~= "function" then
+			return nil
+		end
+		return chunk()
+	end)
+	if okResult then
+		if type(result) == "string" then
+			return trimTextValue(result) or defaultTitle
+		end
+		if type(result) == "table" then
+			local resolved = trimTextValue(result.title)
+				or trimTextValue(result.header)
+				or trimTextValue(result.text)
+				or trimTextValue(result[1])
+			if resolved then
+				return resolved
+			end
+		end
+	end
+
+	local okFetch, rawText = pcall(function()
+		return game:HttpGet(HEADER_SOURCE_URL)
+	end)
+	if okFetch and type(rawText) == "string" then
+		return resolveRemoteHeaderTitle(rawText) or defaultTitle
+	end
+
+	return defaultTitle
+end
+
 local function normalizeThemeTable(rawTheme)
 	local normalized = {}
 	if type(rawTheme) ~= "table" then
@@ -207,8 +289,32 @@ end
 
 local THEME = fetchRemoteThemeConfig()
 
+local REMOTE_WINDOW_TITLE = fetchRemoteHeaderTitle(TEXTS.en.windowTitle)
+TEXTS.en.windowTitle = REMOTE_WINDOW_TITLE
+TEXTS.vi.windowTitle = REMOTE_WINDOW_TITLE
+TEXTS.jp.windowTitle = REMOTE_WINDOW_TITLE
+
 local function themeColor(key, fallback)
 	return parseThemeColor(THEME[tostring(key):lower()]) or fallback
+end
+
+local function fitWindowTitle()
+	if not titleLabel or not titleLabel.Parent then
+		return
+	end
+	local availableWidth = math.max(titleLabel.AbsoluteSize.X, 1)
+	local availableHeight = math.max(titleLabel.AbsoluteSize.Y, 1)
+	local text = titleLabel.Text or ""
+	local textSize = TITLE_MAX_TEXT_SIZE
+	while textSize > TITLE_MIN_TEXT_SIZE do
+		local bounds = TextService:GetTextSize(text, textSize, titleLabel.Font, Vector2.new(10000, availableHeight))
+		if bounds.X <= availableWidth then
+			break
+		end
+		textSize = textSize - 1
+	end
+	titleLabel.TextSize = textSize
+	titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 end
 
 local function getHttpRequestFunction()
@@ -235,6 +341,27 @@ local function getCustomAssetFunction()
 		return getsynasset
 	end
 	return nil
+end
+
+local function copyToClipboard(text)
+	if type(text) ~= "string" or text == "" then
+		return false
+	end
+	local clipboardSetters = {
+		setclipboard,
+		Clipboard and Clipboard.set,
+		toclipboard,
+		set_clipboard,
+	}
+	for _, setter in ipairs(clipboardSetters) do
+		if type(setter) == "function" then
+			local ok = pcall(setter, text)
+			if ok then
+				return true
+			end
+		end
+	end
+	return false
 end
 
 local function resolveRemoteImageAsset(url, imageFile)
@@ -442,6 +569,7 @@ local function refreshTexts()
 			object.Text = info.formatter and info.formatter(value) or value
 		end
 	end
+	fitWindowTitle()
 	for lang, button in pairs(langButtons) do
 		if button and button.Parent then
 			local active = lang == currentLanguage
@@ -505,7 +633,7 @@ blurOverlay.Parent = root
 local main = Instance.new("Frame")
 main.AnchorPoint = Vector2.new(0.5, 0.5)
 main.Position = UDim2.fromScale(0.5, 0.5)
-main.Size = UDim2.fromOffset(860, 430)
+main.Size = UDim2.fromOffset(BASE_MAIN_WIDTH, BASE_MAIN_HEIGHT)
 main.BackgroundColor3 = UI_THEME.panelBackground
 main.BackgroundTransparency = 0.08
 main.BorderSizePixel = 0
@@ -514,6 +642,10 @@ main.Active = true
 main.Draggable = true
 main.ZIndex = 2
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 24)
+
+local mainScale = Instance.new("UIScale")
+mainScale.Scale = 1
+mainScale.Parent = main
 
 local mainStroke = Instance.new("UIStroke", main)
 mainStroke.Color = UI_THEME.panelStroke
@@ -555,14 +687,15 @@ header.BackgroundTransparency = 1
 header.ZIndex = 6
 header.Parent = main
 
-local titleLabel = Instance.new("TextLabel")
+titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -404, 0, 26)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 21
+titleLabel.TextSize = TITLE_MAX_TEXT_SIZE
 titleLabel.TextColor3 = UI_THEME.textPrimarySoft
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.TextYAlignment = Enum.TextYAlignment.Center
+titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 titleLabel.ZIndex = 7
 titleLabel.Parent = header
 bindText(titleLabel, "windowTitle")
@@ -707,7 +840,7 @@ end
 
 local creatorUser = Instance.new("TextLabel")
 creatorUser.Size = UDim2.new(1, -26, 0, 22)
-creatorUser.Position = UDim2.fromOffset(13, 214)
+creatorUser.Position = UDim2.fromOffset(13, 204)
 creatorUser.BackgroundTransparency = 1
 creatorUser.Font = Enum.Font.GothamBold
 creatorUser.TextSize = 14
@@ -720,7 +853,7 @@ bindText(creatorUser, "creatorUser")
 
 local creatorTag = Instance.new("TextLabel")
 creatorTag.Size = UDim2.new(1, -26, 0, 18)
-creatorTag.Position = UDim2.fromOffset(13, 238)
+creatorTag.Position = UDim2.fromOffset(13, 226)
 creatorTag.BackgroundTransparency = 1
 creatorTag.Font = Enum.Font.Gotham
 creatorTag.TextSize = 12
@@ -733,7 +866,7 @@ bindText(creatorTag, "creatorTag")
 
 local creatorBadge = Instance.new("TextLabel")
 creatorBadge.Size = UDim2.fromOffset(142, 28)
-creatorBadge.Position = UDim2.new(0.5, -71, 1, -42)
+creatorBadge.Position = UDim2.new(0.5, -71, 1, -72)
 creatorBadge.BackgroundColor3 = UI_THEME.badgeBackground
 creatorBadge.BorderSizePixel = 0
 creatorBadge.Font = Enum.Font.GothamBold
@@ -744,6 +877,20 @@ creatorBadge.TextYAlignment = Enum.TextYAlignment.Center
 creatorBadge.ZIndex = 6
 creatorBadge.Parent = creatorCard
 Instance.new("UICorner", creatorBadge).CornerRadius = UDim.new(0, 10)
+
+local discordButton = Instance.new("TextButton")
+discordButton.Size = UDim2.fromOffset(142, 28)
+discordButton.Position = UDim2.new(0.5, -71, 1, -38)
+discordButton.BackgroundColor3 = UI_THEME.buttonPrimary
+discordButton.BorderSizePixel = 0
+discordButton.AutoButtonColor = false
+discordButton.Font = Enum.Font.GothamBold
+discordButton.TextSize = 11
+discordButton.TextColor3 = UI_THEME.buttonPrimaryText
+discordButton.ZIndex = 6
+discordButton.Parent = creatorCard
+Instance.new("UICorner", discordButton).CornerRadius = UDim.new(0, 10)
+bindText(discordButton, "discordCopy")
 
 local infoCard = Instance.new("Frame")
 infoCard.Name = "InfoCard"
@@ -982,6 +1129,12 @@ end))
 trackConnection(rejoinButton.MouseLeave:Connect(function()
 	tweenButton(rejoinButton, UI_THEME.buttonPrimary, UI_THEME.buttonPrimaryText)
 end))
+trackConnection(discordButton.MouseEnter:Connect(function()
+	tweenButton(discordButton, UI_THEME.buttonPrimaryHover, UI_THEME.buttonPrimaryText)
+end))
+trackConnection(discordButton.MouseLeave:Connect(function()
+	tweenButton(discordButton, UI_THEME.buttonPrimary, UI_THEME.buttonPrimaryText)
+end))
 
 local function notifyButton(button, textKey, duration)
 	local originalText = tr(textKey == "rejoinFailed" and "rejoin" or "close")
@@ -1017,6 +1170,16 @@ trackConnection(rejoinButton.MouseButton1Click:Connect(function()
 			end
 		end)
 	end
+end))
+
+trackConnection(discordButton.MouseButton1Click:Connect(function()
+	local copied = copyToClipboard(DISCORD_DM_URL)
+	discordButton.Text = tr(copied and "discordCopied" or "discordCopyFailed")
+	task.delay(1.4, function()
+		if discordButton and discordButton.Parent then
+			discordButton.Text = tr("discordCopy")
+		end
+	end)
 end))
 
 for index = 1, AMBIENT_COUNT do
@@ -1102,87 +1265,56 @@ bottomTextHolder.ZIndex = 6
 local function updateLayout()
 	local camera = workspace.CurrentCamera
 	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
-	local width = math.clamp(viewport.X - 80, 640, 860)
-	local height = math.clamp(viewport.Y - 90, 380, 430)
-	main.Size = UDim2.fromOffset(width, height)
+	local safeWidth = math.max(viewport.X - 40, 240)
+	local safeHeight = math.max(viewport.Y - 60, 180)
+	local scaleX = safeWidth / BASE_MAIN_WIDTH
+	local scaleY = safeHeight / BASE_MAIN_HEIGHT
+	mainScale.Scale = math.min(scaleX, scaleY, 1)
 
-	local compactHeader = width < 760
-	if compactHeader then
-		header.Size = UDim2.new(1, -24, 0, 90)
-		contentHolder.Position = UDim2.fromOffset(14, 108)
-		contentHolder.Size = UDim2.new(1, -28, 1, -126)
-		titleLabel.Size = UDim2.new(1, 0, 0, 24)
-		subtitleLabel.Size = UDim2.new(1, 0, 0, 18)
-		langHolder.AnchorPoint = Vector2.new(0, 0)
-		langHolder.Position = UDim2.fromOffset(0, 48)
-		langHolder.Size = UDim2.new(1, -102, 0, 34)
-		closeButton.Position = UDim2.new(1, 0, 0, 48)
-	else
-		header.Size = UDim2.new(1, -24, 0, 54)
-		contentHolder.Position = UDim2.fromOffset(14, 74)
-		contentHolder.Size = UDim2.new(1, -28, 1, -92)
-		titleLabel.Size = UDim2.new(1, -404, 0, 26)
-		subtitleLabel.Size = UDim2.new(1, -404, 0, 18)
-		langHolder.AnchorPoint = Vector2.new(1, 0)
-		langHolder.Position = UDim2.new(1, -104, 0, 0)
-		langHolder.Size = UDim2.fromOffset(268, 34)
-		closeButton.Position = UDim2.new(1, 0, 0, 2)
-	end
+	header.Size = UDim2.new(1, -24, 0, 54)
+	contentHolder.Position = UDim2.fromOffset(14, 74)
+	contentHolder.Size = UDim2.new(1, -28, 1, -92)
+	titleLabel.Size = UDim2.new(1, -404, 0, 26)
+	subtitleLabel.Size = UDim2.new(1, -404, 0, 18)
+	langHolder.AnchorPoint = Vector2.new(1, 0)
+	langHolder.Position = UDim2.new(1, -104, 0, 0)
+	langHolder.Size = UDim2.fromOffset(268, 34)
+	closeButton.Position = UDim2.new(1, 0, 0, 2)
+	fitWindowTitle()
 
-	if width < 760 then
-		contentLayout.FillDirection = Enum.FillDirection.Vertical
-		creatorCard.Size = UDim2.new(1, 0, 0, 224)
-		infoCard.Size = UDim2.new(1, 0, 0, math.max(170, height - 370))
-		avatarWrap.Position = UDim2.fromOffset(18, 62)
-		creatorTitle.TextXAlignment = Enum.TextXAlignment.Left
-		creatorTitle.Position = UDim2.fromOffset(162, 74)
-		creatorTitle.Size = UDim2.new(1, -176, 0, 24)
-		creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Left
-		creatorSubtitle.Position = UDim2.fromOffset(162, 100)
-		creatorSubtitle.Size = UDim2.new(1, -176, 0, 18)
-		creatorUser.TextXAlignment = Enum.TextXAlignment.Left
-		creatorUser.Position = UDim2.fromOffset(162, 130)
-		creatorUser.Size = UDim2.new(1, -176, 0, 22)
-		creatorTag.TextXAlignment = Enum.TextXAlignment.Left
-		creatorTag.Position = UDim2.fromOffset(162, 154)
-		creatorTag.Size = UDim2.new(1, -176, 0, 18)
-		creatorUser.TextYAlignment = Enum.TextYAlignment.Center
-		creatorTag.TextYAlignment = Enum.TextYAlignment.Center
-		creatorBadge.Position = UDim2.fromOffset(18, 182)
-	else
-		contentLayout.FillDirection = Enum.FillDirection.Horizontal
-		creatorCard.Size = UDim2.fromOffset(252, 320)
-		infoCard.Size = UDim2.fromOffset(width - 294, 320)
-		avatarWrap.Position = UDim2.new(0.5, -64, 0, 72)
-		creatorTitle.TextXAlignment = Enum.TextXAlignment.Center
-		creatorTitle.Position = UDim2.fromOffset(12, 14)
-		creatorTitle.Size = UDim2.new(1, -24, 0, 26)
-		creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Center
-		creatorSubtitle.Position = UDim2.fromOffset(12, 40)
-		creatorSubtitle.Size = UDim2.new(1, -24, 0, 18)
-		creatorUser.TextXAlignment = Enum.TextXAlignment.Center
-		creatorUser.Position = UDim2.fromOffset(13, 214)
-		creatorUser.Size = UDim2.new(1, -26, 0, 22)
-		creatorTag.TextXAlignment = Enum.TextXAlignment.Center
-		creatorTag.Position = UDim2.fromOffset(13, 238)
-		creatorTag.Size = UDim2.new(1, -26, 0, 18)
-		creatorUser.TextYAlignment = Enum.TextYAlignment.Center
-		creatorTag.TextYAlignment = Enum.TextYAlignment.Center
-		creatorBadge.Position = UDim2.new(0.5, -71, 1, -42)
-	end
+	contentLayout.FillDirection = Enum.FillDirection.Horizontal
+	creatorCard.Size = UDim2.fromOffset(252, 320)
+	infoCard.Size = UDim2.fromOffset(BASE_MAIN_WIDTH - 294, 320)
+	avatarWrap.Position = UDim2.new(0.5, -64, 0, 72)
+	creatorTitle.TextXAlignment = Enum.TextXAlignment.Center
+	creatorTitle.Position = UDim2.fromOffset(12, 14)
+	creatorTitle.Size = UDim2.new(1, -24, 0, 26)
+	creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Center
+	creatorSubtitle.Position = UDim2.fromOffset(12, 40)
+	creatorSubtitle.Size = UDim2.new(1, -24, 0, 18)
+	creatorUser.TextXAlignment = Enum.TextXAlignment.Center
+	creatorUser.Position = UDim2.fromOffset(13, 204)
+	creatorUser.Size = UDim2.new(1, -26, 0, 22)
+	creatorTag.TextXAlignment = Enum.TextXAlignment.Center
+	creatorTag.Position = UDim2.fromOffset(13, 226)
+	creatorTag.Size = UDim2.new(1, -26, 0, 18)
+	creatorUser.TextYAlignment = Enum.TextYAlignment.Center
+	creatorTag.TextYAlignment = Enum.TextYAlignment.Center
+	creatorBadge.Position = UDim2.new(0.5, -71, 1, -72)
+	discordButton.Position = UDim2.new(0.5, -71, 1, -38)
 
-	maintenanceTitle.Size = UDim2.new(1, -36, 0, compactHeader and 56 or 48)
-	maintenanceBody.Position = UDim2.fromOffset(18, compactHeader and 112 or 114)
-	maintenanceBody.Size = UDim2.new(1, -36, 0, compactHeader and 42 or 40)
-	maintenanceNote.Position = UDim2.fromOffset(18, compactHeader and 156 or 158)
-	maintenanceNote.Size = UDim2.new(1, -36, 0, compactHeader and 30 or 28)
-	statusCard.Position = UDim2.fromOffset(18, compactHeader and 194 or 196)
-	statusCard.Size = UDim2.new(1, -36, 0, compactHeader and 76 or 74)
-	bottomTextHolder.Size = UDim2.new(1, compactHeader and -36 or -228, 0, 34)
-	bottomTextHolder.Position = UDim2.new(0, 18, 1, compactHeader and -10 or -10)
-	rejoinButton.Position = UDim2.new(1, -18, 1, compactHeader and -10 or -10)
-	rejoinButton.Size = UDim2.fromOffset(compactHeader and 160 or 180, compactHeader and 34 or 36)
-	rejoinButton.TextSize = compactHeader and 12 or 13
+	maintenanceTitle.Size = UDim2.new(1, -36, 0, 48)
+	maintenanceBody.Position = UDim2.fromOffset(18, 114)
+	maintenanceBody.Size = UDim2.new(1, -36, 0, 40)
+	maintenanceNote.Position = UDim2.fromOffset(18, 158)
+	maintenanceNote.Size = UDim2.new(1, -36, 0, 28)
+	statusCard.Position = UDim2.fromOffset(18, 196)
+	statusCard.Size = UDim2.new(1, -36, 0, 74)
+	bottomTextHolder.Size = UDim2.new(1, -228, 0, 34)
+	bottomTextHolder.Position = UDim2.new(0, 18, 1, -10)
+	rejoinButton.Position = UDim2.new(1, -18, 1, -10)
+	rejoinButton.Size = UDim2.fromOffset(180, 36)
+	rejoinButton.TextSize = 13
 	statusHint.Visible = true
 end
 
