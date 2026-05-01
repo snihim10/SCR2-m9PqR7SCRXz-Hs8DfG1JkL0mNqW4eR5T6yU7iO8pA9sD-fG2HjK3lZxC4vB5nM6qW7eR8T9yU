@@ -13,7 +13,7 @@ local PLAYER_GUI = localPlayer:WaitForChild("PlayerGui")
 local CREDIT_USER_ID = 9930783751
 local CREDIT_USERNAME = "CuongOutLook"
 local DISCORD_DM_URL = "https://discord.com/users/535824717785858059"
-local CREDIT_AVATAR_URL = "https://i.postimg.cc/sDLdpjTx/Picsart-26-04-14-06-54-03-382.jpg"
+local CREDIT_AVATAR_URL = "https://i.postimg.cc/j2yV9Kdq/Cuong-Out-Look.png"
 local CREDIT_AVATAR_FILE = "CuongOutLook_credit_avatar.jpg"
 local CREDIT_AVATAR_META_FILE = "CuongOutLook_credit_avatar_url.txt"
 -- Bump this when you replace the hosted image but keep the same URL (invalidates executor file cache).
